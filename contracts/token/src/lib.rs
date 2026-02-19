@@ -10,6 +10,7 @@ use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, E
 #[contracttype]
 pub enum DataKey {
     Admin,
+    PendingAdmin,
     Name,
     Symbol,
     Decimals,
@@ -26,7 +27,7 @@ pub enum DataKey {
 ///
 /// Contributor issues layered on top:
 /// - #1  freeze_account / unfreeze_account (guard on transfer)
-/// - #2  two-step admin transfer (replace set_admin)
+/// - #2  two-step admin transfer (propose_admin / accept_admin)
 /// - #4  max_supply cap enforcement in mint
 #[contract]
 pub struct TokenContract;
@@ -76,11 +77,23 @@ impl TokenContract {
         Self::_burn(&env, &from, amount);
     }
 
-    /// Transfer admin role instantly.
-    /// TODO (issue #2): replace with two-step propose_admin / accept_admin.
-    pub fn set_admin(env: Env, new_admin: Address) {
+    /// Propose a new admin. Must be called by the current admin.
+    /// The new admin must call `accept_admin` to finalize the transfer.
+    pub fn propose_admin(env: Env, new_admin: Address) {
         Self::_require_admin(&env);
-        env.storage().instance().set(&DataKey::Admin, &new_admin);
+        env.storage().instance().set(&DataKey::PendingAdmin, &new_admin);
+    }
+
+    /// Accept the admin role. Must be called by the pending admin.
+    pub fn accept_admin(env: Env) {
+        let pending: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::PendingAdmin)
+            .expect("no pending admin");
+        pending.require_auth();
+        env.storage().instance().set(&DataKey::Admin, &pending);
+        env.storage().instance().remove(&DataKey::PendingAdmin);
     }
 
     // ── Token operations ────────────────────────────────────────────────
@@ -325,9 +338,38 @@ mod test {
     }
 
     #[test]
-    fn test_set_admin() {
+    fn test_propose_and_accept_admin() {
         let (_, client, _, user) = setup();
-        client.set_admin(&user);
+        client.propose_admin(&user);
+        // Admin has not changed yet
+        assert_ne!(client.admin(), user);
+        client.accept_admin();
         assert_eq!(client.admin(), user);
+    }
+
+    #[test]
+    #[should_panic(expected = "no pending admin")]
+    fn test_accept_admin_without_proposal() {
+        let (_, client, _, _) = setup();
+        client.accept_admin();
+    }
+
+    #[test]
+    fn test_propose_admin_overwrites_previous() {
+        let (env, client, _, user) = setup();
+        let other = Address::generate(&env);
+        client.propose_admin(&user);
+        client.propose_admin(&other);
+        client.accept_admin();
+        assert_eq!(client.admin(), other);
+    }
+
+    #[test]
+    fn test_old_admin_retains_role_until_accepted() {
+        let (_, client, admin, user) = setup();
+        client.propose_admin(&user);
+        // Admin can still mint before acceptance
+        client.mint(&user, &1i128);
+        assert_eq!(client.admin(), admin);
     }
 }
