@@ -124,7 +124,7 @@ impl VestingContract {
             .get(&DataKey::TokenContract)
             .expect("not initialized");
 
-        let token_client = crate::token_client::Client::new(&env, &token_addr);
+        let token_client = soroban_sdk::token::Client::new(&env, &token_addr);
         token_client.transfer(&env.current_contract_address(), &recipient, &releasable);
 
         env.events().publish(
@@ -137,8 +137,54 @@ impl VestingContract {
     /// return unvested remainder to admin.
     ///
     /// TODO (issue #3): implement revoke logic
-    pub fn revoke(_env: Env, _recipient: Address) {
-        todo!("implement revoke — see issue #3")
+    pub fn revoke(env: Env, recipient: Address) {
+        Self::_require_admin(&env);
+
+        let key = DataKey::Schedule(recipient.clone());
+        let mut schedule: VestingSchedule = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .expect("no schedule found");
+
+        assert!(!schedule.revoked, "schedule already revoked");
+
+        let vested = Self::_vested_amount(&env, &schedule);
+        let releasable = vested - schedule.released;
+        let unvested = schedule.total_amount - vested;
+
+        // Update schedule state
+        schedule.revoked = true;
+        schedule.released = vested; // All vested tokens are now accounted for as released (or being released)
+        env.storage().persistent().set(&key, &schedule);
+
+        let token_addr: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::TokenContract)
+            .expect("not initialized");
+
+        let token_client = soroban_sdk::token::Client::new(&env, &token_addr);
+
+        // 1. Transfer releasable vested tokens to recipient
+        if releasable > 0 {
+            token_client.transfer(&env.current_contract_address(), &recipient, &releasable);
+        }
+
+        // 2. Transfer unvested tokens back to admin
+        if unvested > 0 {
+            let admin: Address = env
+                .storage()
+                .instance()
+                .get(&DataKey::Admin)
+                .expect("not initialized");
+            token_client.transfer(&env.current_contract_address(), &admin, &unvested);
+        }
+
+        env.events().publish(
+            (symbol_short!("revoke"), recipient),
+            (releasable, unvested),
+        );
     }
 
     // ── Read-only queries ───────────────────────────────────────────────
@@ -208,23 +254,6 @@ impl VestingContract {
 }
 
 // ---------------------------------------------------------------------------
-// External token contract client (for calling transfer on the token)
-// ---------------------------------------------------------------------------
-
-mod token_client {
-    soroban_sdk::contractimport!(
-        file = "../token/target/wasm32-unknown-unknown/release/soroban_token.wasm"
-    );
-}
-
-// Note: For production the import path above must point to the built token
-// WASM. During unit tests we mock the token contract instead, so the import
-// is only needed for integration / deployment builds.
-//
-// If you get a compile error from the import, build the token contract first:
-//   cd contracts/token && cargo build --target wasm32-unknown-unknown --release
-
-// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -240,7 +269,13 @@ mod test {
     fn setup_schedule(env: &Env, client: &VestingContractClient) -> (Address, Address) {
         let admin = Address::generate(env);
         let recipient = Address::generate(env);
-        let token = Address::generate(env); // mock token address
+        
+        // Register a mock token contract
+        let token = env.register_stellar_asset_contract(admin.clone());
+        let token_client = soroban_sdk::token::StellarAssetClient::new(env, &token);
+        
+        // Mint tokens to the vesting contract
+        token_client.mint(&client.address, &1_000_000i128);
 
         client.initialize(&admin, &token);
 
@@ -390,5 +425,100 @@ mod test {
 
         // Try to create a second schedule for the same recipient
         client.create_schedule(&recipient, &500i128, &100u32, &200u32);
+    }
+
+    #[test]
+    fn test_revoke_midway() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, VestingContract);
+        let client = VestingContractClient::new(&env, &contract_id);
+        let (_, recipient) = setup_schedule(&env, &client);
+
+        // Ledger 150 — 50% vested (500 tokens)
+        env.ledger().set_sequence_number(150);
+        
+        // Revoke
+        client.revoke(&recipient);
+
+        let schedule = client.get_schedule(&recipient);
+        assert!(schedule.revoked);
+        assert_eq!(schedule.released, 500);
+
+        // Verify release panics
+        let res = client.try_release(&recipient);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_revoke_before_cliff() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, VestingContract);
+        let client = VestingContractClient::new(&env, &contract_id);
+        let (_, recipient) = setup_schedule(&env, &client);
+
+        // Ledger 50 — nothing vested
+        env.ledger().set_sequence_number(50);
+        
+        client.revoke(&recipient);
+
+        let schedule = client.get_schedule(&recipient);
+        assert!(schedule.revoked);
+        assert_eq!(schedule.released, 0);
+    }
+
+    #[test]
+    fn test_revoke_after_end() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, VestingContract);
+        let client = VestingContractClient::new(&env, &contract_id);
+        let (_, recipient) = setup_schedule(&env, &client);
+
+        // Ledger 250 — fully vested
+        env.ledger().set_sequence_number(250);
+        
+        client.revoke(&recipient);
+
+        let schedule = client.get_schedule(&recipient);
+        assert!(schedule.revoked);
+        assert_eq!(schedule.released, 1_000);
+    }
+
+    #[test]
+    #[should_panic(expected = "schedule already revoked")]
+    fn test_double_revoke_panics() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, VestingContract);
+        let client = VestingContractClient::new(&env, &contract_id);
+        let (_, recipient) = setup_schedule(&env, &client);
+
+        client.revoke(&recipient);
+        client.revoke(&recipient);
+    }
+
+    #[test]
+    #[should_panic] // require_auth will fail
+    fn test_revoke_non_admin_panics() {
+        let env = Env::default();
+        // Do NOT mock auths here to test requirement
+        
+        let contract_id = env.register_contract(None, VestingContract);
+        let client = VestingContractClient::new(&env, &contract_id);
+        
+        let admin = Address::generate(&env);
+        let recipient = Address::generate(&env);
+        let token = Address::generate(&env);
+
+        client.initialize(&admin, &token);
+        
+        // This should fail because we haven't mocked auth for admin
+        client.revoke(&recipient);
     }
 }
