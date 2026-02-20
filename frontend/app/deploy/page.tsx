@@ -1,3 +1,5 @@
+import DeployForm from "./DeployForm";
+
 /**
  * /deploy — Token deployment page.
  *
@@ -8,24 +10,19 @@
 
 export default function DeployPage() {
   return (
-    <div className="mx-auto flex min-h-[80vh] max-w-3xl flex-col items-center justify-center px-6 text-center">
-      <span className="text-5xl">🚀</span>
-      <h1 className="mt-4 text-3xl font-bold text-white">Deploy a Token</h1>
-      <p className="mt-3 max-w-md text-gray-400">
-        The multi-step deployment form will be built here — configure your
-        token&apos;s name, symbol, supply, and admin address, then deploy to
-        Soroban with one click.
-      </p>
-      <div className="mt-6 glass-card inline-block px-5 py-3 text-sm text-gray-500">
-        🔧 Coming soon —{" "}
-        <a
-          href="https://github.com/your-org/soroban-token-launchpad/issues/7"
-          className="text-stellar-400 hover:underline"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          issue #7
-        </a>
+    <div className="mx-auto flex min-h-[80vh] max-w-4xl flex-col items-center justify-center px-6 py-12">
+      <div className="text-center mb-12">
+        <h1 className="text-4xl font-bold text-white mb-4 animate-fade-in-up">
+          Deploy Your <span className="gradient-text">Soroban Token</span>
+        </h1>
+        <p className="text-gray-400 max-w-lg mx-auto animate-fade-in-up [animation-delay:100ms]">
+          Launch a production-ready SEP-41 token in minutes. Configure your metadata,
+          supply, and governance, then deploy to the Stellar network.
+        </p>
+      </div>
+
+      <div className="w-full animate-fade-in-up [animation-delay:200ms]">
+        <DeployForm />
       </div>
     </div>
   );
