@@ -9,6 +9,7 @@ import {
   type TokenInfo,
   type TokenHolder,
 } from "@/lib/stellar";
+import VestingProgress from "./VestingProgress";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -295,6 +296,14 @@ export default function TokenDashboard({
           Top Holders
         </h2>
         <HoldersTable holders={holders} />
+      </section>
+
+      {/* Vesting schedule */}
+      <section aria-label="Vesting schedule" className="mt-10">
+        <h2 className="mb-4 text-sm font-medium uppercase tracking-wider text-gray-500">
+          Vesting Schedule
+        </h2>
+        <VestingProgress decimals={tokenInfo.decimals} />
       </section>
     </div>
   );
