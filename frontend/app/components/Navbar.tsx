@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { WalletButton } from "./WalletButton";
+import { SettingsModal } from "./SettingsModal";
 
 /**
  * Top navbar — extracted as a client component so wallet state
@@ -36,12 +37,15 @@ export function Navbar() {
           </Link>
         </div>
 
-        {/* Right side — wallet & network */}
+        {/* Right side — wallet, settings & network */}
         <div className="flex items-center gap-3">
           {/* TODO (issue #12): network switcher component */}
           <div className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-gray-500">
             Testnet
           </div>
+
+          {/* Custom RPC / Horizon settings */}
+          <SettingsModal />
 
           {/* Wallet connect / disconnect */}
           <WalletButton />
