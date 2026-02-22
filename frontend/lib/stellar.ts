@@ -1,16 +1,30 @@
 import * as StellarSdk from "@stellar/stellar-sdk";
 
 // ---------------------------------------------------------------------------
-// Config — defaults to Stellar Testnet
+// Config — defaults to Stellar Testnet, overridable via localStorage
 // ---------------------------------------------------------------------------
-const HORIZON_URL =
+const DEFAULT_HORIZON_URL =
   process.env.NEXT_PUBLIC_HORIZON_URL ?? "https://horizon-testnet.stellar.org";
-const SOROBAN_RPC_URL =
+const DEFAULT_SOROBAN_RPC_URL =
   process.env.NEXT_PUBLIC_SOROBAN_RPC_URL ??
   "https://soroban-testnet.stellar.org";
 const NETWORK_PASSPHRASE =
   process.env.NEXT_PUBLIC_NETWORK_PASSPHRASE ??
   StellarSdk.Networks.TESTNET;
+
+function getHorizonUrl(): string {
+  if (typeof window !== "undefined") {
+    return localStorage.getItem("soropad_horizon_url") || DEFAULT_HORIZON_URL;
+  }
+  return DEFAULT_HORIZON_URL;
+}
+
+function getRpcUrl(): string {
+  if (typeof window !== "undefined") {
+    return localStorage.getItem("soropad_rpc_url") || DEFAULT_SOROBAN_RPC_URL;
+  }
+  return DEFAULT_SOROBAN_RPC_URL;
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -34,7 +48,9 @@ export interface TokenHolder {
 // ---------------------------------------------------------------------------
 // Soroban RPC helpers
 // ---------------------------------------------------------------------------
-const rpc = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
+function getRpc() {
+  return new StellarSdk.rpc.Server(getRpcUrl());
+}
 
 /**
  * Simulate a read-only Soroban contract invocation and return the result xdr.
@@ -58,7 +74,7 @@ async function simulateCall(
     .setTimeout(30)
     .build();
 
-  const sim = await rpc.simulateTransaction(tx);
+  const sim = await getRpc().simulateTransaction(tx);
 
   if (StellarSdk.rpc.Api.isSimulationError(sim)) {
     throw new Error(
@@ -168,7 +184,7 @@ export async function fetchTopHolders(
     // Attempt to read ledger entries for known holder patterns.
     // For a real product, this would use a Soroban indexer (e.g. Mercury).
     // As a best-effort fallback, we query Horizon for the classic asset.
-    const horizon = new StellarSdk.Horizon.Server(HORIZON_URL);
+    const horizon = new StellarSdk.Horizon.Server(getHorizonUrl());
 
     if (_symbol && _issuer) {
       const asset = new StellarSdk.Asset(_symbol, _issuer);
