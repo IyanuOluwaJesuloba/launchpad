@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { Copy, Check, ArrowUpDown, AlertCircle, Loader2 } from "lucide-react";
+import { ArrowUpDown, AlertCircle, Loader2 } from "lucide-react";
 import {
   fetchTokenInfo,
   fetchTopHolders,
@@ -10,6 +10,7 @@ import {
   type TokenHolder,
 } from "@/lib/stellar";
 import VestingProgress from "./VestingProgress";
+import { CopyButton } from "@/components/ui/CopyButton";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -21,40 +22,18 @@ type SortDir = "asc" | "desc";
 // Sub-components
 // ---------------------------------------------------------------------------
 
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
 
-  const handleCopy = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Clipboard API may be unavailable (e.g. non-HTTPS)
-    }
-  }, [text]);
-
-  return (
-    <button
-      onClick={handleCopy}
-      className="ml-2 inline-flex items-center rounded-md border border-white/10 px-2 py-1 text-xs text-gray-400 transition-colors hover:border-stellar-400/30 hover:text-stellar-300"
-      aria-label={copied ? "Copied" : "Copy to clipboard"}
-    >
-      {copied ? (
-        <Check className="h-3.5 w-3.5 text-green-400" />
-      ) : (
-        <Copy className="h-3.5 w-3.5" />
-      )}
-    </button>
-  );
-}
-
-function InfoCard({ label, value }: { label: string; value: string }) {
+function InfoCard({ label, value, copyValue }: { label: string; value: string; copyValue?: string }) {
   return (
     <div className="glass-card flex flex-col gap-1 p-4">
-      <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
-        {label}
-      </span>
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
+          {label}
+        </span>
+        {copyValue && copyValue !== "N/A" && (
+          <CopyButton value={copyValue} label={`Copy ${label}`} className="ml-1" />
+        )}
+      </div>
       <span className="truncate text-lg font-semibold text-white">
         {value}
       </span>
@@ -177,14 +156,15 @@ function HoldersTable({ holders }: { holders: TokenHolder[] }) {
             {sorted.map((holder, i) => (
               <tr
                 key={holder.address}
-                className={`border-b border-white/5 transition-colors hover:bg-white/[0.02] ${
-                  i % 2 === 0 ? "bg-white/[0.01]" : ""
-                }`}
+                className={`border-b border-white/5 transition-colors hover:bg-white/[0.02] ${i % 2 === 0 ? "bg-white/[0.01]" : ""
+                  }`}
               >
                 <td className="px-4 py-3 font-mono text-xs text-stellar-300">
-                  <span className="hidden sm:inline">{holder.address}</span>
-                  <span className="sm:hidden">{truncateAddress(holder.address, 6)}</span>
-                  <CopyButton text={holder.address} />
+                  <div className="flex items-center gap-2">
+                    <span className="hidden sm:inline">{holder.address}</span>
+                    <span className="sm:hidden">{truncateAddress(holder.address, 6)}</span>
+                    <CopyButton value={holder.address} label="Copy wallet address" />
+                  </div>
                 </td>
                 <td className="px-4 py-3 text-right font-mono text-white">
                   {holder.balance}
@@ -268,7 +248,7 @@ export default function TokenDashboard({
             <span className="hidden md:inline">{contractId}</span>
             <span className="md:hidden">{truncateAddress(contractId, 8)}</span>
           </span>
-          <CopyButton text={contractId} />
+          <CopyButton value={contractId} label="Copy contract ID" />
         </div>
       </div>
 
@@ -286,6 +266,7 @@ export default function TokenDashboard({
           <InfoCard
             label="Admin"
             value={truncateAddress(tokenInfo.admin)}
+            copyValue={tokenInfo.admin}
           />
         </div>
       </section>
