@@ -9,13 +9,15 @@ import { Input } from "@/components/ui/Input";
 import { useWallet } from "../../../hooks/useWallet";
 import { 
     addressToScVal, 
-    i128ToScVal 
+    i128ToScVal,
+    nativeToScVal 
 } from "@/lib/soroban";
 import { 
     TransactionBuilder, 
     Networks, 
     rpc,
-    Contract
+    Contract,
+    xdr
 } from "@stellar/stellar-sdk";
 import { 
     Coins, 
@@ -23,7 +25,8 @@ import {
     UserPlus, 
     ShieldAlert,
     CheckCircle2,
-    ExternalLink
+    ExternalLink,
+    Clock
 } from "lucide-react";
 
 /* ── Constants ────────────────────────────────────────────────── */
@@ -47,9 +50,20 @@ const transferAdminSchema = z.object({
     newAdmin: z.string().regex(/^G[A-Z2-7]{55}$/, "Invalid Stellar address"),
 });
 
+const vestingSchema = z.object({
+    vestingContract: z.string().regex(/^C[A-Z2-7]{55}$/, "Invalid contract address (must start with C)"),
+    recipient: z.string().regex(/^G[A-Z2-7]{55}$/, "Invalid Stellar address"),
+    amount: z.string().refine((val) => !isNaN(Number(val)) && Number(val) > 0, "Amount must be positive"),
+    cliffDays: z.string().refine((val) => !isNaN(Number(val)) && Number(val) >= 0, "Days must be 0 or more"),
+    durationDays: z.string().refine((val) => !isNaN(Number(val)) && Number(val) > 0, "Duration must be positive"),
+});
+
 type MintData = z.infer<typeof mintSchema>;
 type BurnData = z.infer<typeof burnSchema>;
 type TransferAdminData = z.infer<typeof transferAdminSchema>;
+type VestingData = z.infer<typeof vestingSchema>;
+
+type AdminActionData = MintData | BurnData | TransferAdminData | VestingData;
 
 /* ── AdminPanel Component ───────────────────────────────────────── */
 
@@ -68,8 +82,9 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
     const mintForm = useForm<MintData>({ resolver: zodResolver(mintSchema) });
     const burnForm = useForm<BurnData>({ resolver: zodResolver(burnSchema) });
     const transferForm = useForm<TransferAdminData>({ resolver: zodResolver(transferAdminSchema) });
+    const vestingForm = useForm<VestingData>({ resolver: zodResolver(vestingSchema) });
 
-    const handleAction = async (action: string, data: any) => {
+    const handleAction = async (action: string, data: AdminActionData) => {
         if (!publicKey) return;
         
         setLoading(action);
@@ -81,22 +96,46 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
             
             // 1. Prepare Arguments
             let method = "";
-            let args: any[] = [];
+            let args: xdr.ScVal[] = [];
 
             if (action === "mint") {
+                const mintData = data as MintData;
                 method = "mint";
-                args = [addressToScVal(data.to), i128ToScVal(data.amount)];
+                args = [addressToScVal(mintData.to), i128ToScVal(BigInt(mintData.amount))];
             } else if (action === "burn") {
+                const burnData = data as BurnData;
                 method = "burn";
-                args = [addressToScVal(data.from), i128ToScVal(data.amount)];
+                args = [addressToScVal(burnData.from), i128ToScVal(BigInt(burnData.amount))];
             } else if (action === "transfer") {
+                const transferData = data as TransferAdminData;
                 method = "set_admin";
-                args = [addressToScVal(data.newAdmin)];
+                args = [addressToScVal(transferData.newAdmin)];
+            } else if (action === "vesting") {
+                const vestingData = data as VestingData;
+                method = "create_schedule";
+                
+                // Ledger logic: 1 day ≈ 17,280 ledgers
+                const currentLedgerRes = await server.getLatestLedger();
+                const currentLedger = currentLedgerRes.sequence;
+                
+                const cliffLedgers = Math.round(Number(vestingData.cliffDays) * 17280);
+                const durationLedgers = Math.round(Number(vestingData.durationDays) * 17280);
+                
+                const cliffLedger = currentLedger + cliffLedgers;
+                const endLedger = cliffLedger + durationLedgers;
+
+                args = [
+                    addressToScVal(vestingData.recipient),
+                    i128ToScVal(BigInt(vestingData.amount)),
+                    nativeToScVal(cliffLedger, { type: "u32" }),
+                    nativeToScVal(endLedger, { type: "u32" })
+                ];
             }
 
             // 2. Build Transaction using Contract class
+            const targetContractId = action === "vesting" ? (data as VestingData).vestingContract : contractId;
             const account = await server.getAccount(publicKey);
-            const contract = new Contract(contractId);
+            const contract = new Contract(targetContractId);
             
             const tx = new TransactionBuilder(account, { 
                 fee: "1000", // Standard fee
@@ -126,9 +165,11 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
                 transferForm.reset();
                 setShowTransferConfirm(false);
             }
-        } catch (err: any) {
-            console.error(`${action} failed:`, err);
-            alert(`${action} failed: ${err.message}`);
+            if (action === "vesting") vestingForm.reset();
+        } catch (err) {
+            const error = err as Error;
+            console.error(`${action} failed:`, error);
+            alert(`${action} failed: ${error.message}`);
         } finally {
             setLoading(null);
         }
@@ -153,7 +194,7 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
                 )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-12">
                 
                 {/* ── Mint Form ─────────────────────────────────────── */}
                 <div className="glass-card p-6 flex flex-col hover:border-stellar-500/30 transition-all duration-300 group">
@@ -226,6 +267,68 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
                             {success === "burn" ? (
                                 <span className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4" /> Success</span>
                             ) : "Burn Tokens"}
+                        </Button>
+                    </form>
+                </div>
+
+                {/* ── Vesting Schedule ────────────────────────────────── */}
+                <div className="glass-card p-6 flex flex-col hover:border-stellar-400/30 transition-all duration-300 group lg:col-span-1">
+                    <div className="flex items-center gap-2 mb-6 text-stellar-300">
+                        <div className="p-2 bg-stellar-500/10 rounded-lg group-hover:scale-110 transition-transform">
+                            <Clock className="w-5 h-5" />
+                        </div>
+                        <h3 className="font-bold text-lg">Create Vesting</h3>
+                    </div>
+                    <form onSubmit={vestingForm.handleSubmit((data) => handleAction("vesting", data))} className="space-y-4 flex-grow">
+                        <Input 
+                            label="Vesting Contract" 
+                            placeholder="C..." 
+                            className="bg-white/5 border-white/10"
+                            {...vestingForm.register("vestingContract")}
+                            error={vestingForm.formState.errors.vestingContract?.message}
+                        />
+                        <Input 
+                            label="Recipient Address" 
+                            placeholder="G..." 
+                            className="bg-white/5 border-white/10"
+                            {...vestingForm.register("recipient")}
+                            error={vestingForm.formState.errors.recipient?.message}
+                        />
+                        <div className="grid grid-cols-2 gap-4">
+                            <Input 
+                                label="Cliff (Days)" 
+                                type="number" 
+                                placeholder="0" 
+                                className="bg-white/5 border-white/10"
+                                {...vestingForm.register("cliffDays")}
+                                error={vestingForm.formState.errors.cliffDays?.message}
+                            />
+                            <Input 
+                                label="Duration (Days)" 
+                                type="number" 
+                                placeholder="365" 
+                                className="bg-white/5 border-white/10"
+                                {...vestingForm.register("durationDays")}
+                                error={vestingForm.formState.errors.durationDays?.message}
+                            />
+                        </div>
+                        <Input 
+                            label="Total Amount" 
+                            type="number" 
+                            placeholder="0.00" 
+                            className="bg-white/5 border-white/10"
+                            {...vestingForm.register("amount")}
+                            error={vestingForm.formState.errors.amount?.message}
+                        />
+                        <Button 
+                            type="submit" 
+                            className="w-full mt-4 bg-stellar-500 hover:bg-stellar-600 text-white shadow-lg shadow-stellar-500/20" 
+                            isLoading={loading === "vesting"}
+                            disabled={!!loading}
+                        >
+                            {success === "vesting" ? (
+                                <span className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4" /> Success</span>
+                            ) : "Initialize Schedule"}
                         </Button>
                     </form>
                 </div>
