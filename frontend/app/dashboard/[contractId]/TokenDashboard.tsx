@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { Copy, Check, ArrowUpDown, AlertCircle, Loader2 } from "lucide-react";
+import { Copy, Check, ArrowUpDown, AlertCircle, Loader2, Download } from "lucide-react";
 import {
   fetchTokenInfo,
   fetchTopHolders,
@@ -83,6 +83,26 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
       </button>
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// CSV export
+// ---------------------------------------------------------------------------
+
+function exportHoldersCsv(holders: TokenHolder[]) {
+  const header = "Address,Balance,Share %";
+  const rows = holders.map(
+    (h) => `${h.address},${h.balance},${h.sharePercent.toFixed(2)}`,
+  );
+  const csv = [header, ...rows].join("\n");
+
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "top_holders.csv";
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 // ---------------------------------------------------------------------------
@@ -291,9 +311,20 @@ export default function TokenDashboard({
 
       {/* Top holders */}
       <section aria-label="Top holders">
-        <h2 className="mb-4 text-sm font-medium uppercase tracking-wider text-gray-500">
-          Top Holders
-        </h2>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-sm font-medium uppercase tracking-wider text-gray-500">
+            Top Holders
+          </h2>
+          {holders.length > 0 && (
+            <button
+              onClick={() => exportHoldersCsv(holders)}
+              className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-gray-300 transition-colors hover:border-stellar-400/30 hover:bg-stellar-500/10 hover:text-stellar-300"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Export CSV
+            </button>
+          )}
+        </div>
         <HoldersTable holders={holders} />
       </section>
     </div>
