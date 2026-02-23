@@ -3,7 +3,9 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { WalletProvider } from "./providers/WalletProvider";
 import { SettingsProvider } from "./providers/SettingsProvider";
+import { NetworkProvider } from "./providers/NetworkProvider";
 import { Navbar } from "./components/Navbar";
+import { MainnetWarning } from "./components/MainnetWarning";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -38,9 +40,13 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen`}
       >
         <SettingsProvider>
+        <NetworkProvider>
           <WalletProvider>
             {/* ── Navbar ──────────────────────────────────────────── */}
             <Navbar />
+
+            {/* Mainnet Warning Banner */}
+            <MainnetWarning />
 
             {/* Page content offset for fixed nav */}
             <main className="pt-16">{children}</main>
@@ -62,6 +68,7 @@ export default function RootLayout({
             </footer>
           </WalletProvider>
         </SettingsProvider>
+        </NetworkProvider>
       </body>
     </html>
   );
