@@ -1,20 +1,26 @@
 import { Control, useWatch } from "react-hook-form";
+import { CopyButton } from "@/components/ui/CopyButton";
 
 interface StepProps {
     control: Control<any>;
 }
 
-export const StepReview = ({ control }: StepProps) => {
-    const formData = useWatch({ control });
-
-    const SummaryItem = ({ label, value }: { label: string; value: string | number | undefined }) => (
-        <div className="flex justify-between py-2 border-b border-white/5">
-            <span className="text-gray-400 text-sm">{label}</span>
-            <span className="text-white font-medium truncate ml-4 max-w-[200px]">
+const SummaryItem = ({ label, value, showCopy }: { label: string; value: string | number | undefined; showCopy?: boolean }) => (
+    <div className="flex justify-between py-2 border-b border-white/5">
+        <span className="text-gray-400 text-sm">{label}</span>
+        <div className="flex items-center gap-2 max-w-[200px]">
+            <span className="text-white font-medium truncate">
                 {value || <span className="text-gray-600 italic">Not set</span>}
             </span>
+            {showCopy && value && typeof value === "string" && (
+                <CopyButton value={value} label={`Copy ${label}`} />
+            )}
         </div>
-    );
+    </div>
+);
+
+export const StepReview = ({ control }: StepProps) => {
+    const formData = useWatch({ control });
 
     return (
         <div className="space-y-6 animate-fade-in-up">
@@ -36,7 +42,7 @@ export const StepReview = ({ control }: StepProps) => {
                 <SummaryItem label="Max Supply" value={formData.maxSupply} />
 
                 <h3 className="text-xs font-bold text-stellar-400 uppercase tracking-widest mt-6 mb-3">Governance</h3>
-                <SummaryItem label="Admin" value={formData.adminAddress} />
+                <SummaryItem label="Admin" value={formData.adminAddress} showCopy />
             </div>
 
             <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 text-xs text-amber-200/80">

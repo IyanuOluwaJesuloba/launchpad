@@ -1,6 +1,7 @@
 "use client";
 
 import { useWallet } from "../hooks/useWallet";
+import { CopyButton } from "@/components/ui/CopyButton";
 
 /**
  * Truncate a Stellar public key for display: `GABC…WXYZ`.
@@ -24,10 +25,11 @@ export function WalletButton() {
       <div className="flex items-center gap-2">
         {/* Truncated address badge */}
         <span
-          className="rounded-lg border border-stellar-500/20 bg-stellar-500/10 px-3 py-1.5 font-mono text-xs text-stellar-300"
+          className="rounded-lg border border-stellar-500/20 bg-stellar-500/10 px-3 py-1.5 font-mono text-xs text-stellar-300 flex items-center gap-2"
           title={publicKey}
         >
           {truncateAddress(publicKey)}
+          <CopyButton value={publicKey} label="Copy wallet address" />
         </span>
 
         {/* Disconnect button */}
