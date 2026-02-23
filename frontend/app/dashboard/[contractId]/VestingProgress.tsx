@@ -261,7 +261,7 @@ function VestingDisplay({
         </div>
         <div className="h-3 w-full overflow-hidden rounded-full border border-white/5 bg-void-800">
           <div
-            className="h-full rounded-full bg-gradient-to-r from-stellar-400 to-stellar-600 transition-all duration-700 ease-out shadow-[0_0_10px_rgba(45,125,255,0.3)]"
+            className="h-full rounded-full bg-linear-to-r from-stellar-400 to-stellar-600 transition-all duration-700 ease-out shadow-[0_0_10px_rgba(45,125,255,0.3)]"
             style={{ width: `${Math.min(vestedPercent, 100)}%` }}
           />
         </div>
@@ -280,7 +280,7 @@ function VestingDisplay({
         </div>
         <div className="h-3 w-full overflow-hidden rounded-full border border-white/5 bg-void-800">
           <div
-            className="h-full rounded-full bg-gradient-to-r from-green-500 to-green-400 transition-all duration-700 ease-out shadow-[0_0_10px_rgba(34,197,94,0.3)]"
+            className="h-full rounded-full bg-linear-to-r from-green-500 to-green-400 transition-all duration-700 ease-out shadow-[0_0_10px_rgba(34,197,94,0.3)]"
             style={{ width: `${Math.min(releasedPercent, 100)}%` }}
           />
         </div>
@@ -298,7 +298,7 @@ function VestingDisplay({
 
           {/* Filled portion */}
           <div
-            className="absolute left-0 top-8 h-1.5 rounded-full bg-gradient-to-r from-stellar-500 to-stellar-400"
+            className="absolute left-0 top-8 h-1.5 rounded-full bg-linear-to-r from-stellar-500 to-stellar-400"
             style={{ width: `${timelinePos}%` }}
           />
 
@@ -422,7 +422,6 @@ export default function VestingProgress({ decimals }: { decimals: number }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { fetchVestingSchedule, fetchCurrentLedger } = useSoroban();
-
   const lookup = useCallback(async () => {
     if (!vestingContract.trim() || !recipient.trim()) return;
 
