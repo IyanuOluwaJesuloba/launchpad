@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useNetwork } from "../providers/NetworkProvider";
 import { WalletButton } from "./WalletButton";
+import { SettingsModal } from "./SettingsModal";
 import { Globe, ChevronDown } from "lucide-react";
 import { useState } from "react";
 
@@ -39,9 +40,12 @@ export function Navbar() {
           </Link>
         </div>
 
-        {/* Right side — wallet & network */}
+        {/* Right side — wallet, settings & network */}
         <div className="flex items-center gap-3">
           <NetworkSwitcher />
+
+          {/* Custom RPC / Horizon settings */}
+          <SettingsModal />
 
           {/* Wallet connect / disconnect */}
           <WalletButton />

@@ -2,15 +2,29 @@ import * as StellarSdk from "@stellar/stellar-sdk";
 import { type NetworkConfig } from "../types/network";
 
 // ---------------------------------------------------------------------------
-// Config — defaults to Stellar Testnet
+// Config — defaults to Stellar Testnet, overridable via localStorage
 // ---------------------------------------------------------------------------
-const HORIZON_URL =
+const DEFAULT_HORIZON_URL =
   process.env.NEXT_PUBLIC_HORIZON_URL ?? "https://horizon-testnet.stellar.org";
-const SOROBAN_RPC_URL =
+const DEFAULT_SOROBAN_RPC_URL =
   process.env.NEXT_PUBLIC_SOROBAN_RPC_URL ??
   "https://soroban-testnet.stellar.org";
 const NETWORK_PASSPHRASE =
   process.env.NEXT_PUBLIC_NETWORK_PASSPHRASE ?? StellarSdk.Networks.TESTNET;
+
+function getHorizonUrl(): string {
+  if (typeof window !== "undefined") {
+    return localStorage.getItem("soropad_horizon_url") || DEFAULT_HORIZON_URL;
+  }
+  return DEFAULT_HORIZON_URL;
+}
+
+function getRpcUrl(): string {
+  if (typeof window !== "undefined") {
+    return localStorage.getItem("soropad_rpc_url") || DEFAULT_SOROBAN_RPC_URL;
+  }
+  return DEFAULT_SOROBAN_RPC_URL;
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -43,6 +57,9 @@ export interface VestingScheduleInfo {
 // ---------------------------------------------------------------------------
 // Soroban RPC helpers
 // ---------------------------------------------------------------------------
+function getRpc() {
+  return new StellarSdk.rpc.Server(getRpcUrl());
+}
 
 /**
  * Simulate a read-only Soroban contract invocation and return the result xdr.
@@ -68,7 +85,7 @@ async function simulateCall(
     .setTimeout(30)
     .build();
 
-  const sim = await rpc.simulateTransaction(tx);
+  const sim = await getRpc().simulateTransaction(tx);
 
   if (StellarSdk.rpc.Api.isSimulationError(sim)) {
     throw new Error(`Soroban simulation error (${method}): ${sim.error}`);
