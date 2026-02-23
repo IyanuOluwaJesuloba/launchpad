@@ -262,6 +262,133 @@ export async function fetchVestingSchedule(
   };
 }
 
+export interface TokenActivityInfo {
+  id: string;
+  pagingToken: string;
+  type: "mint" | "transfer" | "burn" | "other";
+  amount: string;
+  from: string;
+  to: string;
+  timestamp: string;
+  txHash: string;
+}
+
+/**
+ * Fetch token activity operations for a given account or contract ID.
+ * Parses classic `payment` and Soroban `invoke_host_function` operations.
+ */
+export async function fetchAccountOperations(
+  accountId: string,
+  cursor?: string,
+  limit = 10
+): Promise<{ records: TokenActivityInfo[]; nextCursor: string | null }> {
+  try {
+    const horizon = new StellarSdk.Horizon.Server(HORIZON_URL);
+
+    // Horizon's .forAccount() only accepts Ed25519 public keys (starting with G).
+    // If the accountId is a contract ID (starting with C), we cannot query its operations this way.
+    // In a production app, we would use an Indexer like Mercury for contract history.
+    if (!accountId.startsWith("G") && !accountId.startsWith("M")) {
+      return { records: [], nextCursor: null };
+    }
+
+    let callBuilder = horizon.operations().forAccount(accountId).limit(limit).order("desc");
+    if (cursor) {
+      callBuilder = callBuilder.cursor(cursor);
+    }
+
+    const response = await callBuilder.call();
+
+    // Extract paging token for the next page, from the last record fetched
+    // (since order is desc, the last record in this array is the oldest).
+    const nextCursor = response.records.length > 0
+      ? response.records[response.records.length - 1].paging_token
+      : null;
+
+    const parsed: TokenActivityInfo[] = [];
+
+    for (const record of response.records) {
+      // Classic Native/Asset Payments
+      if (record.type === "payment") {
+        const r = record as unknown as Record<string, unknown>; // Horizon.ServerApi.PaymentOperationRecord
+        // Native mints aren't strictly 'payment' but for asset payments:
+        const isMint = r.from === r.asset_issuer;
+        const isBurn = r.to === r.asset_issuer; // simplified burn heuristic
+        let typeInfo: "mint" | "transfer" | "burn" = "transfer";
+        if (isMint) typeInfo = "mint";
+        else if (isBurn) typeInfo = "burn";
+
+        parsed.push({
+          id: record.id,
+          pagingToken: record.paging_token,
+          type: typeInfo,
+          amount: typeof r.amount === "string" ? r.amount : "0",
+          from: typeof r.from === "string" ? r.from : "Unknown",
+          to: typeof r.to === "string" ? r.to : "Unknown",
+          timestamp: record.created_at,
+          txHash: record.transaction_hash,
+        });
+      }
+      // Soroban Contract Invokes
+      else if (record.type === "invoke_host_function") {
+        const r = record as unknown as Record<string, unknown>;
+        // Check for balance changes (requires Soroban RPC / Horizon with Soroban ingestion)
+        // Note: Soroban Horizon responses might include `asset_balance_changes` if it was a token transfer
+        const balChanges = r.asset_balance_changes;
+        if (Array.isArray(balChanges) && balChanges.length > 0) {
+          // Find the transfer or mint that is most relevant.
+          // This is a simplified heuristic. We pick the first transfer for now.
+          const transfer = balChanges.find((c: unknown) => {
+            if (!c || typeof c !== "object") return false;
+            const cast = c as Record<string, unknown>;
+            return cast.type === "transfer" || cast.type === "mint" || cast.type === "burn";
+          }) as Record<string, unknown> | undefined;
+
+          if (transfer) {
+            let actType: "mint" | "transfer" | "burn" = "transfer";
+            if (transfer.from === r.source_account && transfer.type === "mint") actType = "mint"; // very rough heuristic, actual type is in transfer.type
+            if (transfer.type === "mint" || transfer.type === "burn") actType = transfer.type as "mint" | "burn";
+
+            parsed.push({
+              id: record.id,
+              pagingToken: record.paging_token,
+              type: actType,
+              amount: typeof transfer.amount === "string" ? transfer.amount : "0",
+              from: typeof transfer.from === "string" ? transfer.from :
+                typeof r.source_account === "string" ? r.source_account : "Unknown",
+              to: typeof transfer.to === "string" ? transfer.to : "Unknown",
+              timestamp: record.created_at,
+              txHash: record.transaction_hash,
+            });
+            continue; // parsed successfully via balance changes
+          }
+        }
+
+        // If we couldn't parse balance changes, mark as generic
+        parsed.push({
+          id: record.id,
+          pagingToken: record.paging_token,
+          type: "other",
+          amount: "-",
+          from: typeof r.source_account === "string" ? r.source_account : "Unknown",
+          to: "-",
+          timestamp: record.created_at,
+          txHash: record.transaction_hash,
+        });
+      }
+    }
+
+    // Filter out "other" if we only want token activity, but keeping it helps visibility
+    const filtered = parsed.filter(p => p.type !== "other");
+
+    return { records: filtered.length > 0 ? filtered : parsed, nextCursor };
+
+  } catch (error) {
+    console.error("Error fetching account operations from Horizon:", error);
+    return { records: [], nextCursor: null };
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Formatting helpers
 // ---------------------------------------------------------------------------
@@ -359,4 +486,91 @@ export async function fetchSupplyBreakdown(
     console.error("[fetchSupplyBreakdown] Error:", error);
     throw new Error("Failed to fetch supply breakdown");
   }
+}
+
+// Transaction building and submission
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a transaction XDR for revoking a vesting schedule.
+ * Returns the unsigned transaction XDR string.
+ */
+export async function buildRevokeTransaction(
+  vestingContractId: string,
+  recipientAddress: string,
+  sourcePublicKey: string,
+): Promise<string> {
+  const contract = new StellarSdk.Contract(vestingContractId);
+  const recipientScVal = new StellarSdk.Address(recipientAddress).toScVal();
+
+  // Get source account
+  const horizon = new StellarSdk.Horizon.Server(HORIZON_URL);
+  const sourceAccount = await horizon.loadAccount(sourcePublicKey);
+
+  // Build transaction
+  const tx = new StellarSdk.TransactionBuilder(sourceAccount, {
+    fee: StellarSdk.BASE_FEE,
+    networkPassphrase: NETWORK_PASSPHRASE,
+  })
+    .addOperation(contract.call("revoke", recipientScVal))
+    .setTimeout(30)
+    .build();
+
+  // Simulate to get resource fees
+  const simulated = await rpc.simulateTransaction(tx);
+
+  if (StellarSdk.rpc.Api.isSimulationError(simulated)) {
+    throw new Error(`Simulation failed: ${simulated.error}`);
+  }
+
+  if (!StellarSdk.rpc.Api.isSimulationSuccess(simulated)) {
+    throw new Error("Transaction simulation was not successful");
+  }
+
+  // Assemble the transaction with simulation results
+  const assembled = StellarSdk.rpc.assembleTransaction(tx, simulated);
+
+  return assembled.build().toXDR();
+}
+
+/**
+ * Submit a signed transaction XDR to the network.
+ * Returns the transaction hash on success.
+ */
+export async function submitTransaction(signedXdr: string): Promise<string> {
+  const tx = StellarSdk.TransactionBuilder.fromXDR(
+    signedXdr,
+    NETWORK_PASSPHRASE,
+  );
+
+  const result = await rpc.sendTransaction(tx as StellarSdk.Transaction);
+
+  if (result.status === "ERROR") {
+    throw new Error(
+      `Transaction failed: ${result.errorResult?.toXDR("base64")}`,
+    );
+  }
+
+  // Poll for transaction result
+  let getResponse = await rpc.getTransaction(result.hash);
+  let attempts = 0;
+  const maxAttempts = 30;
+
+  while (getResponse.status === "NOT_FOUND" && attempts < maxAttempts) {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    getResponse = await rpc.getTransaction(result.hash);
+    attempts++;
+  }
+
+  if (getResponse.status === "NOT_FOUND") {
+    throw new Error("Transaction not found after polling");
+  }
+
+  if (getResponse.status === "FAILED") {
+    throw new Error(
+      `Transaction failed: ${getResponse.resultXdr?.toXDR("base64")}`,
+    );
+  }
+
+  return result.hash;
 }
