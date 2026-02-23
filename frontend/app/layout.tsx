@@ -39,35 +39,35 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen`}
       >
-        <SettingsProvider>
         <NetworkProvider>
-          <WalletProvider>
-            {/* ── Navbar ──────────────────────────────────────────── */}
-            <Navbar />
+          <SettingsProvider>
+            <WalletProvider>
+              {/* ── Navbar ──────────────────────────────────────────── */}
+              <Navbar />
 
-            {/* Mainnet Warning Banner */}
-            <MainnetWarning />
+              {/* Mainnet Warning Banner */}
+              <MainnetWarning />
 
-            {/* Page content offset for fixed nav */}
-            <main className="pt-16">{children}</main>
+              {/* Page content offset for fixed nav */}
+              <main className="pt-16">{children}</main>
 
-            {/* ── Footer ─────────────────────────────────────────── */}
-            <footer className="border-t border-white/5 py-8 text-center text-sm text-gray-500">
-              <p>
-                Built for the{" "}
-                <a
-                  href="https://www.drips.network/wave"
-                  className="text-stellar-400 hover:underline"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Stellar Wave Program
-                </a>{" "}
-                · MIT License
-              </p>
-            </footer>
-          </WalletProvider>
-        </SettingsProvider>
+              {/* ── Footer ─────────────────────────────────────────── */}
+              <footer className="border-t border-white/5 py-8 text-center text-sm text-gray-500">
+                <p>
+                  Built for the{" "}
+                  <a
+                    href="https://www.drips.network/wave"
+                    className="text-stellar-400 hover:underline"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Stellar Wave Program
+                  </a>{" "}
+                  · MIT License
+                </p>
+              </footer>
+            </WalletProvider>
+          </SettingsProvider>
         </NetworkProvider>
       </body>
     </html>

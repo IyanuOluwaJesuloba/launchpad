@@ -38,6 +38,12 @@ export function Navbar() {
           >
             Dashboard
           </Link>
+          <Link
+            href="/claim"
+            className="text-sm text-gray-400 transition-colors hover:text-white"
+          >
+            Claim
+          </Link>
         </div>
 
         {/* Right side — wallet, settings & network */}
