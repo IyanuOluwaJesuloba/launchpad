@@ -6,9 +6,11 @@ import {
   truncateAddress,
   type TokenInfo,
   type TokenHolder,
+  type SupplyBreakdown,
 } from "@/lib/stellar";
 import { useSoroban } from "@/hooks/useSoroban";
 import VestingProgress from "./VestingProgress";
+import SupplyBreakdownChart from "@/components/charts/SupplyBreakdownChart";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -54,9 +56,7 @@ function InfoCard({ label, value }: { label: string; value: string }) {
       <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
         {label}
       </span>
-      <span className="truncate text-lg font-semibold text-white">
-        {value}
-      </span>
+      <span className="truncate text-lg font-semibold text-white">{value}</span>
     </div>
   );
 }
@@ -70,15 +70,18 @@ function LoadingState() {
   );
 }
 
-function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
+function ErrorState({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}) {
   return (
     <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 text-center">
       <AlertCircle className="h-10 w-10 text-red-400" />
       <p className="max-w-md text-gray-400">{message}</p>
-      <button
-        onClick={onRetry}
-        className="btn-secondary px-4 py-2 text-sm"
-      >
+      <button onClick={onRetry} className="btn-secondary px-4 py-2 text-sm">
         Retry
       </button>
     </div>
@@ -143,7 +146,13 @@ function HoldersTable({ holders }: { holders: TokenHolder[] }) {
               <th
                 className={thClass}
                 onClick={() => toggleSort("address")}
-                aria-sort={sortField === "address" ? sortDir === "asc" ? "ascending" : "descending" : "none"}
+                aria-sort={
+                  sortField === "address"
+                    ? sortDir === "asc"
+                      ? "ascending"
+                      : "descending"
+                    : "none"
+                }
               >
                 <span className="inline-flex items-center gap-1">
                   Address
@@ -153,7 +162,13 @@ function HoldersTable({ holders }: { holders: TokenHolder[] }) {
               <th
                 className={`${thClass} text-right`}
                 onClick={() => toggleSort("balance")}
-                aria-sort={sortField === "balance" ? sortDir === "asc" ? "ascending" : "descending" : "none"}
+                aria-sort={
+                  sortField === "balance"
+                    ? sortDir === "asc"
+                      ? "ascending"
+                      : "descending"
+                    : "none"
+                }
               >
                 <span className="inline-flex items-center justify-end gap-1">
                   Balance
@@ -163,7 +178,13 @@ function HoldersTable({ holders }: { holders: TokenHolder[] }) {
               <th
                 className={`${thClass} text-right`}
                 onClick={() => toggleSort("sharePercent")}
-                aria-sort={sortField === "sharePercent" ? sortDir === "asc" ? "ascending" : "descending" : "none"}
+                aria-sort={
+                  sortField === "sharePercent"
+                    ? sortDir === "asc"
+                      ? "ascending"
+                      : "descending"
+                    : "none"
+                }
               >
                 <span className="inline-flex items-center justify-end gap-1">
                   % Share
@@ -182,7 +203,9 @@ function HoldersTable({ holders }: { holders: TokenHolder[] }) {
               >
                 <td className="px-4 py-3 font-mono text-xs text-stellar-300">
                   <span className="hidden sm:inline">{holder.address}</span>
-                  <span className="sm:hidden">{truncateAddress(holder.address, 6)}</span>
+                  <span className="sm:hidden">
+                    {truncateAddress(holder.address, 6)}
+                  </span>
                   <CopyButton text={holder.address} />
                 </td>
                 <td className="px-4 py-3 text-right font-mono text-white">
@@ -193,7 +216,9 @@ function HoldersTable({ holders }: { holders: TokenHolder[] }) {
                     <div className="hidden h-1.5 w-16 overflow-hidden rounded-full bg-void-700 sm:block">
                       <div
                         className="h-full rounded-full bg-gradient-to-r from-stellar-500 to-stellar-400"
-                        style={{ width: `${Math.min(holder.sharePercent, 100)}%` }}
+                        style={{
+                          width: `${Math.min(holder.sharePercent, 100)}%`,
+                        }}
                       />
                     </div>
                     <span className="font-mono text-gray-300">
@@ -210,20 +235,21 @@ function HoldersTable({ holders }: { holders: TokenHolder[] }) {
   );
 }
 
+import ActivityFeed from "./ActivityFeed";
+
 // ---------------------------------------------------------------------------
 // Main dashboard component
 // ---------------------------------------------------------------------------
 
-export default function TokenDashboard({
-  contractId,
-}: {
-  contractId: string;
-}) {
+export default function TokenDashboard({ contractId }: { contractId: string }) {
   const [tokenInfo, setTokenInfo] = useState<TokenInfo | null>(null);
   const [holders, setHolders] = useState<TokenHolder[]>([]);
+  const [supplyBreakdown, setSupplyBreakdown] =
+    useState<SupplyBreakdown | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { fetchTokenInfo, fetchTopHolders } = useSoroban();
+  const { fetchTokenInfo, fetchTopHolders, fetchSupplyBreakdown } =
+    useSoroban();
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -236,11 +262,15 @@ export default function TokenDashboard({
       // Attempt to load holders (best-effort for classic-wrapped assets)
       const holderData = await fetchTopHolders(contractId);
       setHolders(holderData);
+
+      // Fetch supply breakdown
+      const breakdown = await fetchSupplyBreakdown(contractId);
+      setSupplyBreakdown(breakdown);
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : "Failed to fetch token data. Please check the contract ID and try again."
+          : "Failed to fetch token data. Please check the contract ID and try again.",
       );
     } finally {
       setLoading(false);
@@ -283,12 +313,25 @@ export default function TokenDashboard({
           <InfoCard label="Decimals" value={String(tokenInfo.decimals)} />
           <InfoCard label="Total Supply" value={tokenInfo.totalSupply} />
           <InfoCard label="Circulating" value={tokenInfo.circulatingSupply} />
-          <InfoCard
-            label="Admin"
-            value={truncateAddress(tokenInfo.admin)}
-          />
+          <InfoCard label="Admin" value={truncateAddress(tokenInfo.admin)} />
         </div>
       </section>
+
+      {/* Supply Breakdown Chart */}
+      {supplyBreakdown && (
+        <section aria-label="Supply breakdown" className="mb-10">
+          <SupplyBreakdownChart
+            data={{
+              circulating: supplyBreakdown.circulating,
+              locked: supplyBreakdown.locked,
+              burned: supplyBreakdown.burned,
+              total: supplyBreakdown.total,
+            }}
+            symbol={tokenInfo.symbol}
+            decimals={tokenInfo.decimals}
+          />
+        </section>
+      )}
 
       {/* Top holders */}
       <section aria-label="Top holders">
@@ -304,6 +347,14 @@ export default function TokenDashboard({
           Vesting Schedule
         </h2>
         <VestingProgress decimals={tokenInfo.decimals} />
+      </section>
+
+      {/* Token Activity Feed */}
+      <section aria-label="Token activity feed" className="mt-10">
+        <h2 className="mb-4 text-sm font-medium uppercase tracking-wider text-gray-500">
+          Token Activity
+        </h2>
+        <ActivityFeed accountId={contractId} />
       </section>
     </div>
   );

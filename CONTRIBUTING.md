@@ -63,3 +63,27 @@ npm run test:e2e
 ## Questions?
 
 Open a [GitHub Discussion](https://github.com/your-org/soroban-token-launchpad/discussions) or comment on the relevant issue.
+
+---
+
+## Regenerating Contract Bindings
+
+TypeScript bindings for the contracts are automatically generated after a successful deployment using `scripts/deploy.ts`. They are stored in `frontend/lib/contracts/`.
+
+If you need to manually regenerate bindings (e.g., after changing contract code without a full re-deploy), you can use the `soroban` CLI:
+
+```bash
+# Generate token bindings
+soroban contract bindings typescript \
+  --id <TOKEN_CONTRACT_ID> \
+  --network <NETWORK> \
+  --output-dir frontend/lib/contracts/token \
+  --overwrite
+
+# Generate vesting bindings
+soroban contract bindings typescript \
+  --id <VESTING_CONTRACT_ID> \
+  --network <NETWORK> \
+  --output-dir frontend/lib/contracts/vesting \
+  --overwrite
+```
