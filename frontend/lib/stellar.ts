@@ -1,4 +1,5 @@
 import * as StellarSdk from "@stellar/stellar-sdk";
+import { type NetworkConfig } from "../types/network";
 
 // ---------------------------------------------------------------------------
 // Config — defaults to Stellar Testnet
@@ -42,7 +43,6 @@ export interface VestingScheduleInfo {
 // ---------------------------------------------------------------------------
 // Soroban RPC helpers
 // ---------------------------------------------------------------------------
-const rpc = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
 
 /**
  * Simulate a read-only Soroban contract invocation and return the result xdr.
@@ -50,8 +50,10 @@ const rpc = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
 async function simulateCall(
   contractId: string,
   method: string,
+  config: NetworkConfig,
   args: StellarSdk.xdr.ScVal[] = [],
 ): Promise<StellarSdk.xdr.ScVal> {
+  const rpc = new StellarSdk.rpc.Server(config.rpcUrl);
   const contract = new StellarSdk.Contract(contractId);
   const account = new StellarSdk.Account(
     "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
@@ -60,7 +62,7 @@ async function simulateCall(
 
   const tx = new StellarSdk.TransactionBuilder(account, {
     fee: "100",
-    networkPassphrase: NETWORK_PASSPHRASE,
+    networkPassphrase: config.passphrase,
   })
     .addOperation(contract.call(method, ...args))
     .setTimeout(30)
@@ -116,27 +118,25 @@ function decodeAddress(val: StellarSdk.xdr.ScVal): string {
 /**
  * Fetch full token metadata from a Soroban SEP-41 token contract.
  */
-export async function fetchTokenInfo(contractId: string): Promise<TokenInfo> {
+export async function fetchTokenInfo(
+  contractId: string,
+  config: NetworkConfig,
+): Promise<TokenInfo> {
   const [nameVal, symbolVal, decimalsVal, adminVal] = await Promise.all([
-    simulateCall(contractId, "name"),
-    simulateCall(contractId, "symbol"),
-    simulateCall(contractId, "decimals"),
-    simulateCall(contractId, "admin").catch(() => null),
+    simulateCall(contractId, "name", config),
+    simulateCall(contractId, "symbol", config),
+    simulateCall(contractId, "decimals", config),
+    simulateCall(contractId, "admin", config).catch(() => null),
   ]);
 
   const decimals = decodeU32(decimalsVal);
 
-  // total_supply is not part of SEP-41 but many tokens implement it;
-  // fall back to "N/A" when unavailable.
   let totalSupply = "N/A";
   let circulatingSupply = "N/A";
   try {
-    const supplyVal = await simulateCall(contractId, "total_supply");
+    const supplyVal = await simulateCall(contractId, "total_supply", config);
     const rawSupply = decodeI128(supplyVal);
     totalSupply = formatTokenAmount(rawSupply, decimals);
-    // For Soroban tokens, circulating supply == total supply unless a
-    // treasury/burn mechanism is in place. Show the same value here;
-    // downstream dashboards can customise.
     circulatingSupply = totalSupply;
   } catch {
     // total_supply not implemented on this contract
@@ -154,25 +154,17 @@ export async function fetchTokenInfo(contractId: string): Promise<TokenInfo> {
 }
 
 /**
- * Fetch the top token holders by querying Horizon for accounts that hold
- * the given classic asset **or** by reading Soroban contract storage.
- *
- * Because Soroban tokens don't expose a native "list holders" method, we
- * query Horizon for the corresponding classic-wrapped asset first. If that
- * returns no results we return an empty list — a production indexer would
- * be needed for full Soroban-native holder enumeration.
+ * Fetch the top token holders.
  */
 export async function fetchTopHolders(
   contractId: string,
+  config: NetworkConfig,
   _symbol?: string,
   _issuer?: string,
   limit = 10,
 ): Promise<TokenHolder[]> {
   try {
-    // Attempt to read ledger entries for known holder patterns.
-    // For a real product, this would use a Soroban indexer (e.g. Mercury).
-    // As a best-effort fallback, we query Horizon for the classic asset.
-    const horizon = new StellarSdk.Horizon.Server(HORIZON_URL);
+    const horizon = new StellarSdk.Horizon.Server(config.horizonUrl);
 
     if (_symbol && _issuer) {
       const asset = new StellarSdk.Asset(_symbol, _issuer);
@@ -183,7 +175,6 @@ export async function fetchTopHolders(
         .order("desc")
         .call();
 
-      // Calculate total for percentage
       let total = BigInt(0);
       const parsed = records.map((acc) => {
         const bal = acc.balances.find(
@@ -212,7 +203,6 @@ export async function fetchTopHolders(
 
     return [];
   } catch {
-    // Horizon query may fail for Soroban-only tokens — expected.
     return [];
   }
 }
@@ -221,7 +211,6 @@ export async function fetchTopHolders(
 // Vesting helpers
 // ---------------------------------------------------------------------------
 
-/** Extract a named field from a Soroban struct (ScVal map). */
 function getStructField(
   entries: StellarSdk.xdr.ScMapEntry[],
   name: string,
@@ -232,22 +221,26 @@ function getStructField(
 }
 
 /**
- * Fetch the current ledger sequence number from Soroban RPC.
+ * Fetch the current ledger sequence number.
  */
-export async function fetchCurrentLedger(): Promise<number> {
+export async function fetchCurrentLedger(
+  config: NetworkConfig,
+): Promise<number> {
+  const rpc = new StellarSdk.rpc.Server(config.rpcUrl);
   const result = await rpc.getLatestLedger();
   return result.sequence;
 }
 
 /**
- * Fetch a vesting schedule from a Soroban vesting contract.
+ * Fetch a vesting schedule.
  */
 export async function fetchVestingSchedule(
   vestingContractId: string,
   recipient: string,
+  config: NetworkConfig,
 ): Promise<VestingScheduleInfo> {
   const recipientScVal = new StellarSdk.Address(recipient).toScVal();
-  const result = await simulateCall(vestingContractId, "get_schedule", [
+  const result = await simulateCall(vestingContractId, "get_schedule", config, [
     recipientScVal,
   ]);
 
@@ -280,7 +273,7 @@ export interface TokenActivityInfo {
 export async function fetchAccountOperations(
   accountId: string,
   cursor?: string,
-  limit = 10
+  limit = 10,
 ): Promise<{ records: TokenActivityInfo[]; nextCursor: string | null }> {
   try {
     const horizon = new StellarSdk.Horizon.Server(HORIZON_URL);
@@ -292,7 +285,11 @@ export async function fetchAccountOperations(
       return { records: [], nextCursor: null };
     }
 
-    let callBuilder = horizon.operations().forAccount(accountId).limit(limit).order("desc");
+    let callBuilder = horizon
+      .operations()
+      .forAccount(accountId)
+      .limit(limit)
+      .order("desc");
     if (cursor) {
       callBuilder = callBuilder.cursor(cursor);
     }
@@ -301,9 +298,10 @@ export async function fetchAccountOperations(
 
     // Extract paging token for the next page, from the last record fetched
     // (since order is desc, the last record in this array is the oldest).
-    const nextCursor = response.records.length > 0
-      ? response.records[response.records.length - 1].paging_token
-      : null;
+    const nextCursor =
+      response.records.length > 0
+        ? response.records[response.records.length - 1].paging_token
+        : null;
 
     const parsed: TokenActivityInfo[] = [];
 
@@ -341,21 +339,32 @@ export async function fetchAccountOperations(
           const transfer = balChanges.find((c: unknown) => {
             if (!c || typeof c !== "object") return false;
             const cast = c as Record<string, unknown>;
-            return cast.type === "transfer" || cast.type === "mint" || cast.type === "burn";
+            return (
+              cast.type === "transfer" ||
+              cast.type === "mint" ||
+              cast.type === "burn"
+            );
           }) as Record<string, unknown> | undefined;
 
           if (transfer) {
             let actType: "mint" | "transfer" | "burn" = "transfer";
-            if (transfer.from === r.source_account && transfer.type === "mint") actType = "mint"; // very rough heuristic, actual type is in transfer.type
-            if (transfer.type === "mint" || transfer.type === "burn") actType = transfer.type as "mint" | "burn";
+            if (transfer.from === r.source_account && transfer.type === "mint")
+              actType = "mint"; // very rough heuristic, actual type is in transfer.type
+            if (transfer.type === "mint" || transfer.type === "burn")
+              actType = transfer.type as "mint" | "burn";
 
             parsed.push({
               id: record.id,
               pagingToken: record.paging_token,
               type: actType,
-              amount: typeof transfer.amount === "string" ? transfer.amount : "0",
-              from: typeof transfer.from === "string" ? transfer.from :
-                typeof r.source_account === "string" ? r.source_account : "Unknown",
+              amount:
+                typeof transfer.amount === "string" ? transfer.amount : "0",
+              from:
+                typeof transfer.from === "string"
+                  ? transfer.from
+                  : typeof r.source_account === "string"
+                    ? r.source_account
+                    : "Unknown",
               to: typeof transfer.to === "string" ? transfer.to : "Unknown",
               timestamp: record.created_at,
               txHash: record.transaction_hash,
@@ -370,7 +379,8 @@ export async function fetchAccountOperations(
           pagingToken: record.paging_token,
           type: "other",
           amount: "-",
-          from: typeof r.source_account === "string" ? r.source_account : "Unknown",
+          from:
+            typeof r.source_account === "string" ? r.source_account : "Unknown",
           to: "-",
           timestamp: record.created_at,
           txHash: record.transaction_hash,
@@ -379,10 +389,9 @@ export async function fetchAccountOperations(
     }
 
     // Filter out "other" if we only want token activity, but keeping it helps visibility
-    const filtered = parsed.filter(p => p.type !== "other");
+    const filtered = parsed.filter((p) => p.type !== "other");
 
     return { records: filtered.length > 0 ? filtered : parsed, nextCursor };
-
   } catch (error) {
     console.error("Error fetching account operations from Horizon:", error);
     return { records: [], nextCursor: null };
@@ -393,7 +402,6 @@ export async function fetchAccountOperations(
 // Formatting helpers
 // ---------------------------------------------------------------------------
 
-/** Format a raw integer token amount using the given decimals. */
 export function formatTokenAmount(raw: string, decimals: number): string {
   if (raw === "N/A") return raw;
   const num = BigInt(raw);
@@ -407,7 +415,6 @@ export function formatTokenAmount(raw: string, decimals: number): string {
   return `${whole.toLocaleString()}.${fracStr}`;
 }
 
-/** Truncate a Stellar address for display: G...XXXX */
 export function truncateAddress(addr: string, chars = 4): string {
   if (addr.length <= chars * 2 + 3) return addr;
   return `${addr.slice(0, chars + 1)}...${addr.slice(-chars)}`;
@@ -433,11 +440,16 @@ export interface SupplyBreakdown {
  */
 export async function fetchSupplyBreakdown(
   tokenContractId: string,
+  config: NetworkConfig,
   vestingContractId?: string,
 ): Promise<SupplyBreakdown> {
   try {
     // Fetch total supply from token contract
-    const totalSupplyVal = await simulateCall(tokenContractId, "total_supply");
+    const totalSupplyVal = await simulateCall(
+      tokenContractId,
+      "total_supply",
+      config,
+    );
     const totalSupply = Number(decodeI128(totalSupplyVal));
 
     // For now, we'll estimate circulating supply as total supply
@@ -465,7 +477,11 @@ export async function fetchSupplyBreakdown(
     // between max supply (if exists) and total supply
     let burnedSupply = 0;
     try {
-      const maxSupplyVal = await simulateCall(tokenContractId, "max_supply");
+      const maxSupplyVal = await simulateCall(
+        tokenContractId,
+        "max_supply",
+        config,
+      );
       // max_supply might return Option<i128>, need to handle that
       // For simplicity, we'll assume if it exists, burned = max - total
       // This is a simplified approach
@@ -517,6 +533,7 @@ export async function buildRevokeTransaction(
     .build();
 
   // Simulate to get resource fees
+  const rpc = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
   const simulated = await rpc.simulateTransaction(tx);
 
   if (StellarSdk.rpc.Api.isSimulationError(simulated)) {
@@ -543,6 +560,7 @@ export async function submitTransaction(signedXdr: string): Promise<string> {
     NETWORK_PASSPHRASE,
   );
 
+  const rpc = new StellarSdk.rpc.Server(SOROBAN_RPC_URL);
   const result = await rpc.sendTransaction(tx as StellarSdk.Transaction);
 
   if (result.status === "ERROR") {

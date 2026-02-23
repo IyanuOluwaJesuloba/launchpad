@@ -3,14 +3,12 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { Copy, Check, ArrowUpDown, AlertCircle, Loader2 } from "lucide-react";
 import {
-  fetchTokenInfo,
-  fetchTopHolders,
-  fetchSupplyBreakdown,
   truncateAddress,
   type TokenInfo,
   type TokenHolder,
   type SupplyBreakdown,
 } from "@/lib/stellar";
+import { useSoroban } from "@/hooks/useSoroban";
 import VestingProgress from "./VestingProgress";
 import SupplyBreakdownChart from "@/components/charts/SupplyBreakdownChart";
 
@@ -199,8 +197,9 @@ function HoldersTable({ holders }: { holders: TokenHolder[] }) {
             {sorted.map((holder, i) => (
               <tr
                 key={holder.address}
-                className={`border-b border-white/5 transition-colors hover:bg-white/[0.02] ${i % 2 === 0 ? "bg-white/[0.01]" : ""
-                  }`}
+                className={`border-b border-white/5 transition-colors hover:bg-white/[0.02] ${
+                  i % 2 === 0 ? "bg-white/[0.01]" : ""
+                }`}
               >
                 <td className="px-4 py-3 font-mono text-xs text-stellar-300">
                   <span className="hidden sm:inline">{holder.address}</span>
@@ -249,6 +248,8 @@ export default function TokenDashboard({ contractId }: { contractId: string }) {
     useState<SupplyBreakdown | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { fetchTokenInfo, fetchTopHolders, fetchSupplyBreakdown } =
+    useSoroban();
 
   const loadData = useCallback(async () => {
     setLoading(true);

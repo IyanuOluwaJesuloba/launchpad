@@ -11,14 +11,13 @@ import {
   CheckCircle,
 } from "lucide-react";
 import {
-  fetchVestingSchedule,
-  fetchCurrentLedger,
   formatTokenAmount,
   truncateAddress,
   buildRevokeTransaction,
   submitTransaction,
   type VestingScheduleInfo,
 } from "@/lib/stellar";
+import { useSoroban } from "@/hooks/useSoroban";
 import { useWallet } from "@/app/hooks/useWallet";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 
@@ -422,6 +421,7 @@ export default function VestingProgress({ decimals }: { decimals: number }) {
   const [currentLedger, setCurrentLedger] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { fetchVestingSchedule, fetchCurrentLedger } = useSoroban();
 
   const lookup = useCallback(async () => {
     if (!vestingContract.trim() || !recipient.trim()) return;
