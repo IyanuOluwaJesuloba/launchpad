@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { WalletProvider } from "./providers/WalletProvider";
+import { SettingsProvider } from "./providers/SettingsProvider";
 import { NetworkProvider } from "./providers/NetworkProvider";
 import { Navbar } from "./components/Navbar";
 import { MainnetWarning } from "./components/MainnetWarning";
@@ -38,6 +39,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen`}
       >
+        <SettingsProvider>
         <NetworkProvider>
           <WalletProvider>
             {/* ── Navbar ──────────────────────────────────────────── */}
@@ -65,6 +67,7 @@ export default function RootLayout({
               </p>
             </footer>
           </WalletProvider>
+        </SettingsProvider>
         </NetworkProvider>
       </body>
     </html>

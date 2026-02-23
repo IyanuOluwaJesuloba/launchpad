@@ -17,6 +17,7 @@ import {
   submitTransaction,
   type VestingScheduleInfo,
 } from "@/lib/stellar";
+import { CopyButton } from "@/components/ui/CopyButton";
 import { useSoroban } from "@/hooks/useSoroban";
 import { useWallet } from "@/app/hooks/useWallet";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
@@ -340,13 +341,14 @@ function VestingDisplay({
       </div>
 
       {/* Recipient */}
-      <div className="text-xs text-gray-500">
-        Recipient:{" "}
+      <div className="flex items-center gap-2 text-xs text-gray-500">
+        <span>Recipient:</span>
         <span className="font-mono text-gray-400">
           {truncateAddress(schedule.recipient, 6)}
         </span>
+        <CopyButton value={schedule.recipient} label="Copy wallet address" />
         {schedule.revoked && (
-          <span className="ml-2 text-red-400">(Revoked)</span>
+          <span className="text-red-400">(Revoked)</span>
         )}
       </div>
 

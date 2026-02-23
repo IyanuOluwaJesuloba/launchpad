@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { Copy, Check, ArrowUpDown, AlertCircle, Loader2 } from "lucide-react";
+import { Copy, Check, ArrowUpDown, AlertCircle, Loader2, Download } from "lucide-react";
 import {
   truncateAddress,
   type TokenInfo,
@@ -10,6 +10,7 @@ import {
 } from "@/lib/stellar";
 import { useSoroban } from "@/hooks/useSoroban";
 import VestingProgress from "./VestingProgress";
+import { CopyButton } from "@/components/ui/CopyButton";
 import SupplyBreakdownChart from "@/components/charts/SupplyBreakdownChart";
 
 // ---------------------------------------------------------------------------
@@ -22,41 +23,21 @@ type SortDir = "asc" | "desc";
 // Sub-components
 // ---------------------------------------------------------------------------
 
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
 
-  const handleCopy = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Clipboard API may be unavailable (e.g. non-HTTPS)
-    }
-  }, [text]);
-
-  return (
-    <button
-      onClick={handleCopy}
-      className="ml-2 inline-flex items-center rounded-md border border-white/10 px-2 py-1 text-xs text-gray-400 transition-colors hover:border-stellar-400/30 hover:text-stellar-300"
-      aria-label={copied ? "Copied" : "Copy to clipboard"}
-    >
-      {copied ? (
-        <Check className="h-3.5 w-3.5 text-green-400" />
-      ) : (
-        <Copy className="h-3.5 w-3.5" />
-      )}
-    </button>
-  );
-}
-
-function InfoCard({ label, value }: { label: string; value: string }) {
+function InfoCard({ label, value, copyValue }: { label: string; value: string; copyValue?: string }) {
   return (
     <div className="glass-card flex flex-col gap-1 p-4">
-      <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
-        {label}
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
+          {label}
+        </span>
+        {copyValue && copyValue !== "N/A" && (
+          <CopyButton value={copyValue} label={`Copy ${label}`} className="ml-1" />
+        )}
+      </div>
+      <span className="truncate text-lg font-semibold text-white">
+        {value}
       </span>
-      <span className="truncate text-lg font-semibold text-white">{value}</span>
     </div>
   );
 }
@@ -86,6 +67,26 @@ function ErrorState({
       </button>
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// CSV export
+// ---------------------------------------------------------------------------
+
+function exportHoldersCsv(holders: TokenHolder[]) {
+  const header = "Address,Balance,Share %";
+  const rows = holders.map(
+    (h) => `${h.address},${h.balance},${h.sharePercent.toFixed(2)}`,
+  );
+  const csv = [header, ...rows].join("\n");
+
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "top_holders.csv";
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 // ---------------------------------------------------------------------------
@@ -202,11 +203,11 @@ function HoldersTable({ holders }: { holders: TokenHolder[] }) {
                 }`}
               >
                 <td className="px-4 py-3 font-mono text-xs text-stellar-300">
-                  <span className="hidden sm:inline">{holder.address}</span>
-                  <span className="sm:hidden">
-                    {truncateAddress(holder.address, 6)}
-                  </span>
-                  <CopyButton text={holder.address} />
+                  <div className="flex items-center gap-2">
+                    <span className="hidden sm:inline">{holder.address}</span>
+                    <span className="sm:hidden">{truncateAddress(holder.address, 6)}</span>
+                    <CopyButton value={holder.address} label="Copy wallet address" />
+                  </div>
                 </td>
                 <td className="px-4 py-3 text-right font-mono text-white">
                   {holder.balance}
@@ -298,7 +299,7 @@ export default function TokenDashboard({ contractId }: { contractId: string }) {
             <span className="hidden md:inline">{contractId}</span>
             <span className="md:hidden">{truncateAddress(contractId, 8)}</span>
           </span>
-          <CopyButton text={contractId} />
+          <CopyButton value={contractId} label="Copy contract ID" />
         </div>
       </div>
 
@@ -313,7 +314,11 @@ export default function TokenDashboard({ contractId }: { contractId: string }) {
           <InfoCard label="Decimals" value={String(tokenInfo.decimals)} />
           <InfoCard label="Total Supply" value={tokenInfo.totalSupply} />
           <InfoCard label="Circulating" value={tokenInfo.circulatingSupply} />
-          <InfoCard label="Admin" value={truncateAddress(tokenInfo.admin)} />
+          <InfoCard
+            label="Admin"
+            value={truncateAddress(tokenInfo.admin)}
+            copyValue={tokenInfo.admin}
+          />
         </div>
       </section>
 
@@ -335,9 +340,20 @@ export default function TokenDashboard({ contractId }: { contractId: string }) {
 
       {/* Top holders */}
       <section aria-label="Top holders">
-        <h2 className="mb-4 text-sm font-medium uppercase tracking-wider text-gray-500">
-          Top Holders
-        </h2>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-sm font-medium uppercase tracking-wider text-gray-500">
+            Top Holders
+          </h2>
+          {holders.length > 0 && (
+            <button
+              onClick={() => exportHoldersCsv(holders)}
+              className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-gray-300 transition-colors hover:border-stellar-400/30 hover:bg-stellar-500/10 hover:text-stellar-300"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Export CSV
+            </button>
+          )}
+        </div>
         <HoldersTable holders={holders} />
       </section>
 
