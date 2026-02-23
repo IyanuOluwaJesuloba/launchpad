@@ -1,16 +1,17 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { ArrowUpDown, AlertCircle, Loader2 } from "lucide-react";
+import { Copy, Check, ArrowUpDown, AlertCircle, Loader2, Download } from "lucide-react";
 import {
-  fetchTokenInfo,
-  fetchTopHolders,
   truncateAddress,
   type TokenInfo,
   type TokenHolder,
+  type SupplyBreakdown,
 } from "@/lib/stellar";
+import { useSoroban } from "@/hooks/useSoroban";
 import VestingProgress from "./VestingProgress";
 import { CopyButton } from "@/components/ui/CopyButton";
+import SupplyBreakdownChart from "@/components/charts/SupplyBreakdownChart";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -50,19 +51,42 @@ function LoadingState() {
   );
 }
 
-function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
+function ErrorState({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}) {
   return (
     <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 text-center">
       <AlertCircle className="h-10 w-10 text-red-400" />
       <p className="max-w-md text-gray-400">{message}</p>
-      <button
-        onClick={onRetry}
-        className="btn-secondary px-4 py-2 text-sm"
-      >
+      <button onClick={onRetry} className="btn-secondary px-4 py-2 text-sm">
         Retry
       </button>
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// CSV export
+// ---------------------------------------------------------------------------
+
+function exportHoldersCsv(holders: TokenHolder[]) {
+  const header = "Address,Balance,Share %";
+  const rows = holders.map(
+    (h) => `${h.address},${h.balance},${h.sharePercent.toFixed(2)}`,
+  );
+  const csv = [header, ...rows].join("\n");
+
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "top_holders.csv";
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 // ---------------------------------------------------------------------------
@@ -123,7 +147,13 @@ function HoldersTable({ holders }: { holders: TokenHolder[] }) {
               <th
                 className={thClass}
                 onClick={() => toggleSort("address")}
-                aria-sort={sortField === "address" ? sortDir === "asc" ? "ascending" : "descending" : "none"}
+                aria-sort={
+                  sortField === "address"
+                    ? sortDir === "asc"
+                      ? "ascending"
+                      : "descending"
+                    : "none"
+                }
               >
                 <span className="inline-flex items-center gap-1">
                   Address
@@ -133,7 +163,13 @@ function HoldersTable({ holders }: { holders: TokenHolder[] }) {
               <th
                 className={`${thClass} text-right`}
                 onClick={() => toggleSort("balance")}
-                aria-sort={sortField === "balance" ? sortDir === "asc" ? "ascending" : "descending" : "none"}
+                aria-sort={
+                  sortField === "balance"
+                    ? sortDir === "asc"
+                      ? "ascending"
+                      : "descending"
+                    : "none"
+                }
               >
                 <span className="inline-flex items-center justify-end gap-1">
                   Balance
@@ -143,7 +179,13 @@ function HoldersTable({ holders }: { holders: TokenHolder[] }) {
               <th
                 className={`${thClass} text-right`}
                 onClick={() => toggleSort("sharePercent")}
-                aria-sort={sortField === "sharePercent" ? sortDir === "asc" ? "ascending" : "descending" : "none"}
+                aria-sort={
+                  sortField === "sharePercent"
+                    ? sortDir === "asc"
+                      ? "ascending"
+                      : "descending"
+                    : "none"
+                }
               >
                 <span className="inline-flex items-center justify-end gap-1">
                   % Share
@@ -174,7 +216,9 @@ function HoldersTable({ holders }: { holders: TokenHolder[] }) {
                     <div className="hidden h-1.5 w-16 overflow-hidden rounded-full bg-void-700 sm:block">
                       <div
                         className="h-full rounded-full bg-gradient-to-r from-stellar-500 to-stellar-400"
-                        style={{ width: `${Math.min(holder.sharePercent, 100)}%` }}
+                        style={{
+                          width: `${Math.min(holder.sharePercent, 100)}%`,
+                        }}
                       />
                     </div>
                     <span className="font-mono text-gray-300">
@@ -191,19 +235,21 @@ function HoldersTable({ holders }: { holders: TokenHolder[] }) {
   );
 }
 
+import ActivityFeed from "./ActivityFeed";
+
 // ---------------------------------------------------------------------------
 // Main dashboard component
 // ---------------------------------------------------------------------------
 
-export default function TokenDashboard({
-  contractId,
-}: {
-  contractId: string;
-}) {
+export default function TokenDashboard({ contractId }: { contractId: string }) {
   const [tokenInfo, setTokenInfo] = useState<TokenInfo | null>(null);
   const [holders, setHolders] = useState<TokenHolder[]>([]);
+  const [supplyBreakdown, setSupplyBreakdown] =
+    useState<SupplyBreakdown | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { fetchTokenInfo, fetchTopHolders, fetchSupplyBreakdown } =
+    useSoroban();
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -216,11 +262,15 @@ export default function TokenDashboard({
       // Attempt to load holders (best-effort for classic-wrapped assets)
       const holderData = await fetchTopHolders(contractId);
       setHolders(holderData);
+
+      // Fetch supply breakdown
+      const breakdown = await fetchSupplyBreakdown(contractId);
+      setSupplyBreakdown(breakdown);
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : "Failed to fetch token data. Please check the contract ID and try again."
+          : "Failed to fetch token data. Please check the contract ID and try again.",
       );
     } finally {
       setLoading(false);
@@ -271,11 +321,38 @@ export default function TokenDashboard({
         </div>
       </section>
 
+      {/* Supply Breakdown Chart */}
+      {supplyBreakdown && (
+        <section aria-label="Supply breakdown" className="mb-10">
+          <SupplyBreakdownChart
+            data={{
+              circulating: supplyBreakdown.circulating,
+              locked: supplyBreakdown.locked,
+              burned: supplyBreakdown.burned,
+              total: supplyBreakdown.total,
+            }}
+            symbol={tokenInfo.symbol}
+            decimals={tokenInfo.decimals}
+          />
+        </section>
+      )}
+
       {/* Top holders */}
       <section aria-label="Top holders">
-        <h2 className="mb-4 text-sm font-medium uppercase tracking-wider text-gray-500">
-          Top Holders
-        </h2>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-sm font-medium uppercase tracking-wider text-gray-500">
+            Top Holders
+          </h2>
+          {holders.length > 0 && (
+            <button
+              onClick={() => exportHoldersCsv(holders)}
+              className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-gray-300 transition-colors hover:border-stellar-400/30 hover:bg-stellar-500/10 hover:text-stellar-300"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Export CSV
+            </button>
+          )}
+        </div>
         <HoldersTable holders={holders} />
       </section>
 
@@ -285,6 +362,14 @@ export default function TokenDashboard({
           Vesting Schedule
         </h2>
         <VestingProgress decimals={tokenInfo.decimals} />
+      </section>
+
+      {/* Token Activity Feed */}
+      <section aria-label="Token activity feed" className="mt-10">
+        <h2 className="mb-4 text-sm font-medium uppercase tracking-wider text-gray-500">
+          Token Activity
+        </h2>
+        <ActivityFeed accountId={contractId} />
       </section>
     </div>
   );
