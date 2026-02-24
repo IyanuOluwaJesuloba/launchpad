@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { Copy, Check, ArrowUpDown, AlertCircle, Loader2, Download } from "lucide-react";
+import {
+  Copy,
+  Check,
+  ArrowUpDown,
+  AlertCircle,
+  Loader2,
+  Download,
+} from "lucide-react";
 import {
   truncateAddress,
   type TokenInfo,
@@ -12,6 +19,7 @@ import { useSoroban } from "@/hooks/useSoroban";
 import VestingProgress from "./VestingProgress";
 import { CopyButton } from "@/components/ui/CopyButton";
 import SupplyBreakdownChart from "@/components/charts/SupplyBreakdownChart";
+import { ExplorerLink } from "@/components/ui/ExplorerLink";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -23,21 +31,45 @@ type SortDir = "asc" | "desc";
 // Sub-components
 // ---------------------------------------------------------------------------
 
-
-function InfoCard({ label, value, copyValue }: { label: string; value: string; copyValue?: string }) {
+function InfoCard({
+  label,
+  value,
+  copyValue,
+  isAddress,
+}: {
+  label: string;
+  value: string;
+  copyValue?: string;
+  isAddress?: boolean;
+}) {
   return (
     <div className="glass-card flex flex-col gap-1 p-4">
       <div className="flex items-center justify-between">
         <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
           {label}
         </span>
-        {copyValue && copyValue !== "N/A" && (
-          <CopyButton value={copyValue} label={`Copy ${label}`} className="ml-1" />
+        {!isAddress && copyValue && copyValue !== "N/A" && (
+          <CopyButton
+            value={copyValue}
+            label={`Copy ${label}`}
+            className="ml-1"
+          />
         )}
       </div>
-      <span className="truncate text-lg font-semibold text-white">
-        {value}
-      </span>
+      {isAddress && copyValue && copyValue !== "N/A" ? (
+        <ExplorerLink
+          type="account"
+          identifier={copyValue}
+          truncate={true}
+          truncateChars={4}
+          showCopy={false}
+          className="text-lg font-semibold"
+        />
+      ) : (
+        <span className="truncate text-lg font-semibold text-white">
+          {value}
+        </span>
+      )}
     </div>
   );
 }
@@ -203,11 +235,13 @@ function HoldersTable({ holders }: { holders: TokenHolder[] }) {
                 }`}
               >
                 <td className="px-4 py-3 font-mono text-xs text-stellar-300">
-                  <div className="flex items-center gap-2">
-                    <span className="hidden sm:inline">{holder.address}</span>
-                    <span className="sm:hidden">{truncateAddress(holder.address, 6)}</span>
-                    <CopyButton value={holder.address} label="Copy wallet address" />
-                  </div>
+                  <ExplorerLink
+                    type="account"
+                    identifier={holder.address}
+                    truncate={true}
+                    truncateChars={6}
+                    showCopy={true}
+                  />
                 </td>
                 <td className="px-4 py-3 text-right font-mono text-white">
                   {holder.balance}
@@ -295,11 +329,14 @@ export default function TokenDashboard({ contractId }: { contractId: string }) {
           <span className="text-stellar-400">({tokenInfo.symbol})</span>
         </h1>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-gray-400">
-          <span className="font-mono text-xs">
-            <span className="hidden md:inline">{contractId}</span>
-            <span className="md:hidden">{truncateAddress(contractId, 8)}</span>
-          </span>
-          <CopyButton value={contractId} label="Copy contract ID" />
+          <span className="text-xs text-gray-500">Contract ID:</span>
+          <ExplorerLink
+            type="contract"
+            identifier={contractId}
+            truncate={true}
+            truncateChars={8}
+            showCopy={true}
+          />
         </div>
       </div>
 
@@ -318,6 +355,7 @@ export default function TokenDashboard({ contractId }: { contractId: string }) {
             label="Admin"
             value={truncateAddress(tokenInfo.admin)}
             copyValue={tokenInfo.admin}
+            isAddress={true}
           />
         </div>
       </section>
