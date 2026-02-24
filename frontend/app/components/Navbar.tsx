@@ -12,9 +12,22 @@ import { useState } from "react";
  * (via `useWallet` inside `<WalletButton>`) works with React hooks.
  */
 export function Navbar() {
+  const navLinks = [
+    { href: "/deploy", label: "Deploy" },
+    { href: "/dashboard", label: "Dashboard" },
+    { href: "/dashboard/allowances", label: "Allowances" },
+  ] as const;
+
+  const navClassName =
+    "fixed top-0 z-50 w-full border-b border-white/5 bg-void-900/80 backdrop-blur-lg";
+  const containerClassName =
+    "mx-auto flex h-16 max-w-7xl items-center justify-between px-6";
+  const navLinkClassName =
+    "text-sm text-gray-400 transition-colors hover:text-white";
+
   return (
-    <nav className="fixed top-0 z-50 w-full border-b border-white/5 bg-void-900/80 backdrop-blur-lg">
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
+    <nav className={navClassName}>
+      <div className={containerClassName}>
         {/* Logo */}
         <Link
           href="/"
@@ -26,24 +39,11 @@ export function Navbar() {
 
         {/* Nav links */}
         <div className="hidden items-center gap-6 md:flex">
-          <Link
-            href="/deploy"
-            className="text-sm text-gray-400 transition-colors hover:text-white"
-          >
-            Deploy
-          </Link>
-          <Link
-            href="/dashboard"
-            className="text-sm text-gray-400 transition-colors hover:text-white"
-          >
-            Dashboard
-          </Link>
-          <Link
-            href="/dashboard/allowances"
-            className="text-sm text-gray-400 transition-colors hover:text-white"
-          >
-            Allowances
-          </Link>
+          {navLinks.map(({ href, label }) => (
+            <Link key={href} href={href} className={navLinkClassName}>
+              {label}
+            </Link>
+          ))}
         </div>
 
         {/* Right side — wallet, settings & network */}
