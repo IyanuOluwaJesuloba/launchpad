@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Search } from "lucide-react";
+import Link from "next/link";
+import { Search, User } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 
 export default function DashboardIndex() {
@@ -61,6 +62,14 @@ export default function DashboardIndex() {
           <p className="mt-2 text-left text-xs text-red-400">{error}</p>
         )}
       </form>
+
+      <Link
+        href="/my-account"
+        className="mt-6 inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-5 py-2.5 text-sm text-gray-400 transition-colors hover:bg-white/10 hover:text-white"
+      >
+        <User className="h-4 w-4" />
+        View My Account
+      </Link>
     </div>
   );
 }
