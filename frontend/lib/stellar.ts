@@ -615,7 +615,7 @@ export function formatTokenAmount(raw: string, decimals: number): string {
 }
 
 export function parseTokenAmount(amount: string, decimals: number): bigint {
-  const trimmed = amount.trim();
+  const trimmed = amount.trim().replace(/,/g, "");
   if (!trimmed) {
     throw new Error("Amount is required");
   }
@@ -650,6 +650,7 @@ export async function fetchTokenDecimals(
   const result = await simulateCall(tokenContractId, "decimals", config);
   return decodeU32(result);
 }
+
 
 export function truncateAddress(addr: string, chars = 4): string {
   if (addr.length <= chars * 2 + 3) return addr;
@@ -865,6 +866,54 @@ export async function buildTransferFromTransaction(params: {
     .build();
 
   const assembled = await simulateAndAssembleTransaction(tx);
+  return assembled.build().toXDR();
+}
+
+/**
+ * Build a transaction XDR for burning tokens.
+ * Returns the unsigned transaction XDR string.
+ */
+export async function buildBurnTransaction(
+  tokenContractId: string,
+  fromAddress: string,
+  amount: string,
+  decimals: number,
+  config: NetworkConfig,
+): Promise<string> {
+  const contract = new StellarSdk.Contract(tokenContractId);
+  const fromScVal = new StellarSdk.Address(fromAddress).toScVal();
+  const rawAmount = parseTokenAmount(amount, decimals);
+  const amountScVal = StellarSdk.xdr.ScVal.scvI128(
+    new StellarSdk.xdr.Int128Parts({
+      hi: StellarSdk.xdr.Int64.fromString((rawAmount >> BigInt(64)).toString()),
+      lo: StellarSdk.xdr.Uint64.fromString((rawAmount & ((BigInt(1) << BigInt(64)) - BigInt(1))).toString()),
+    }),
+  );
+
+  const rpc = new StellarSdk.rpc.Server(config.rpcUrl);
+  const horizon = new StellarSdk.Horizon.Server(config.horizonUrl);
+
+  const sourceAccount = await horizon.loadAccount(fromAddress);
+
+  const tx = new StellarSdk.TransactionBuilder(sourceAccount, {
+    fee: StellarSdk.BASE_FEE,
+    networkPassphrase: config.passphrase,
+  })
+    .addOperation(contract.call("burn", fromScVal, amountScVal))
+    .setTimeout(30)
+    .build();
+
+  const simulated = await rpc.simulateTransaction(tx);
+
+  if (StellarSdk.rpc.Api.isSimulationError(simulated)) {
+    throw new Error(`Simulation failed: ${simulated.error}`);
+  }
+
+  if (!StellarSdk.rpc.Api.isSimulationSuccess(simulated)) {
+    throw new Error("Transaction simulation was not successful");
+  }
+
+  const assembled = StellarSdk.rpc.assembleTransaction(tx, simulated);
   return assembled.build().toXDR();
 }
 
