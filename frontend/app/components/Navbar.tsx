@@ -38,6 +38,12 @@ export function Navbar() {
           >
             Dashboard
           </Link>
+          <Link
+            href="/dashboard/allowances"
+            className="text-sm text-gray-400 transition-colors hover:text-white"
+          >
+            Allowances
+          </Link>
         </div>
 
         {/* Right side — wallet, settings & network */}
