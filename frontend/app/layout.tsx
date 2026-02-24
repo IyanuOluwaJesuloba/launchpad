@@ -39,17 +39,17 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen`}
       >
-        <SettingsProvider>
         <NetworkProvider>
-          <WalletProvider>
-            {/* ── Navbar ──────────────────────────────────────────── */}
-            <Navbar />
+          <SettingsProvider>
+            <WalletProvider>
+              {/* ── Navbar ──────────────────────────────────────────── */}
+              <Navbar />
 
-            {/* Mainnet Warning Banner */}
-            <MainnetWarning />
+              {/* Mainnet Warning Banner */}
+              <MainnetWarning />
 
-            {/* Page content offset for fixed nav */}
-            <main className="pt-16">{children}</main>
+              {/* Page content offset for fixed nav */}
+              <main className="pt-16">{children}</main>
 
             {/* ── Footer ─────────────────────────────────────────── */}
             <footer className="border-t border-white/5 py-8 text-center text-sm text-gray-500">
