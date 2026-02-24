@@ -92,7 +92,17 @@ Click any column header to sort. Click again to reverse the sort direction.
 ```typescript
 const [searchQuery, setSearchQuery] = useState("");
 const [currentPage, setCurrentPage] = useState(1);
-const [sortField, setSortField] = useState<SortField>("balance");
+const [sortField, setSortField] = useState<SortField>("balance");Problem
+The Top Holders table can become too large, making it difficult to browse or locate specific addresses as the user base grows.
+
+Proposed Solution
+Add pagination to the Top Holders dashboard table (e.g., 10 rows per page)
+Add a search bar to instantly filter or find a specific wallet address in the table
+Alternatives Considered
+Keeping a long, static table (hurts UX and performance)
+
+Additional Context
+Should work smoothly for hundreds or thousands of holders, with minimal UI latency.
 const [sortDir, setSortDir] = useState<SortDir>("desc");
 ```
 
