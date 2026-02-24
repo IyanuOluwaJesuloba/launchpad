@@ -6,10 +6,12 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Button } from "@/components/ui/Button";
 import { ProgressBar } from "@/components/ui/ProgressBar";
+import { PreflightCheckDisplay } from "@/components/ui/PreflightCheck";
 import { StepMetadata } from "./steps/StepMetadata";
 import { StepSupply } from "./steps/StepSupply";
 import { StepAdmin } from "./steps/StepAdmin";
 import { StepReview } from "./steps/StepReview";
+import { useTransactionSimulator } from "@/hooks/useTransactionSimulator";
 import { ArrowLeft, ArrowRight, Rocket } from "lucide-react";
 
 const deploySchema = z.object({
@@ -36,6 +38,14 @@ const STEPS = [
 export default function DeployForm() {
     const [currentStep, setCurrentStep] = useState(1);
     const [isDeploying, setIsDeploying] = useState(false);
+    const [preflightResult, setPreflightResult] = useState<{
+        isLoading: boolean;
+        success: boolean;
+        errors: string[];
+        warnings: string[];
+    } | null>(null);
+
+    const simulator = useTransactionSimulator();
 
     const {
         register,
@@ -43,6 +53,7 @@ export default function DeployForm() {
         control,
         trigger,
         formState: { errors, isValid },
+        watch,
     } = useForm<DeployFormData>({
         resolver: zodResolver(deploySchema),
         mode: "onChange",
@@ -73,11 +84,38 @@ export default function DeployForm() {
 
     const onSubmit = async (data: DeployFormData) => {
         setIsDeploying(true);
-        // Placeholder for actual deployment logic
-        console.log("Deploying with data:", data);
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-        setIsDeploying(false);
-        alert("Token deployment simulated! Check console for data.");
+        setPreflightResult({ isLoading: true, success: false, errors: [], warnings: [] });
+
+        try {
+            // Placeholder for actual deployment logic
+            // In a real implementation, this would:
+            // 1. Build the token contract deployment transaction
+            // 2. Simulate it via Soroban RPC
+            // 3. Show results to user
+            // 4. Prompt for Freighter signature if all checks pass
+            
+            console.log("Deploying with data:", data);
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+            
+            setPreflightResult({
+                isLoading: false,
+                success: true,
+                errors: [],
+                warnings: [],
+            });
+            
+            alert("Token deployment simulated! Check console for data.");
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : "Unknown error";
+            setPreflightResult({
+                isLoading: false,
+                success: false,
+                errors: [errorMessage],
+                warnings: [],
+            });
+        } finally {
+            setIsDeploying(false);
+        }
     };
 
     return (
@@ -94,12 +132,25 @@ export default function DeployForm() {
                     {currentStep === 4 && <StepReview control={control} />}
                 </div>
 
+                {/* Pre-flight check results (shown on review step) */}
+                {currentStep === 4 && preflightResult && (
+                    <div className="mt-6 mb-6">
+                        <PreflightCheckDisplay
+                            isLoading={preflightResult.isLoading}
+                            errors={preflightResult.errors}
+                            warnings={preflightResult.warnings}
+                            successMessage={preflightResult.success ? "Transaction is ready to sign" : undefined}
+                            onDismiss={() => setPreflightResult(null)}
+                        />
+                    </div>
+                )}
+
                 <div className="mt-10 flex justify-between items-center bg-void-900/50 -mx-8 -mb-8 p-6 rounded-b-2xl border-t border-white/5">
                     <Button
                         type="button"
                         variant="secondary"
                         onClick={prevStep}
-                        disabled={currentStep === 1 || isDeploying}
+                        disabled={currentStep === 1 || isDeploying || (preflightResult?.isLoading ?? false)}
                         className="px-4 py-2"
                     >
                         <ArrowLeft className="w-4 h-4" />
@@ -116,15 +167,43 @@ export default function DeployForm() {
                             <ArrowRight className="w-4 h-4" />
                         </Button>
                     ) : (
-                        <Button
-                            type="submit"
-                            disabled={!isValid || isDeploying}
-                            isLoading={isDeploying}
-                            className="px-8 py-2"
-                        >
-                            <Rocket className="w-4 h-4" />
-                            Deploy Token
-                        </Button>
+                        <div className="flex gap-3">
+                            <Button
+                                type="button"
+                                variant="secondary"
+                                onClick={async () => {
+                                    const formData = watch();
+                                    setPreflightResult({
+                                        isLoading: true,
+                                        success: false,
+                                        errors: [],
+                                        warnings: [],
+                                    });
+                                    // Pre-flight check simulation would go here
+                                    // For now, simulate success after a delay
+                                    await new Promise((resolve) => setTimeout(resolve, 1000));
+                                    setPreflightResult({
+                                        isLoading: false,
+                                        success: true,
+                                        errors: [],
+                                        warnings: [],
+                                    });
+                                }}
+                                disabled={!isValid || isDeploying || (preflightResult?.isLoading ?? false)}
+                                className="px-6 py-2"
+                            >
+                                Check
+                            </Button>
+                            <Button
+                                type="submit"
+                                disabled={!isValid || isDeploying || !(preflightResult?.success ?? false)}
+                                isLoading={isDeploying}
+                                className="px-8 py-2"
+                            >
+                                <Rocket className="w-4 h-4" />
+                                Deploy Token
+                            </Button>
+                        </div>
                     )}
                 </div>
             </form>
