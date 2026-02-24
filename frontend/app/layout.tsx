@@ -67,8 +67,8 @@ export default function RootLayout({
               </p>
             </footer>
           </WalletProvider>
-        </SettingsProvider>
         </NetworkProvider>
+        </SettingsProvider>
       </body>
     </html>
   );
