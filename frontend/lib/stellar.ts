@@ -483,6 +483,27 @@ export function truncateAddress(addr: string, chars = 4): string {
 }
 
 // ---------------------------------------------------------------------------
+// Stellar Expert link helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Generate a Stellar Expert URL for various blockchain entities.
+ *
+ * @param type - The type of entity: 'account', 'contract', or 'tx'
+ * @param identifier - The public key, contract ID, or transaction hash
+ * @param network - The network type ('testnet' or 'mainnet')
+ * @returns The full Stellar Expert URL
+ */
+export function getStellarExpertUrl(
+  type: "account" | "contract" | "tx",
+  identifier: string,
+  network: "testnet" | "mainnet" = "testnet",
+): string {
+  const baseUrl = "https://stellar.expert/explorer";
+  return `${baseUrl}/${network}/${type}/${identifier}`;
+}
+
+// ---------------------------------------------------------------------------
 // Supply breakdown helpers
 // ---------------------------------------------------------------------------
 
