@@ -410,6 +410,8 @@ function HoldersTable({ holders }: { holders: TokenHolder[] }) {
 
 import ActivityFeed from "./ActivityFeed";
 import { TransferPanel } from "./components/TransferPanel";
+import { UserPanel } from "./components/UserPanel";
+
 
 // ---------------------------------------------------------------------------
 // Main dashboard component
@@ -498,6 +500,9 @@ export default function TokenDashboard({ contractId }: { contractId: string }) {
           />
         </div>
       </section>
+
+      {/* User Actions Panel (Burn Tokens) */}
+      <UserPanel contractId={contractId} decimals={tokenInfo.decimals} />
 
       {/* Supply Breakdown Chart */}
       {supplyBreakdown && (
