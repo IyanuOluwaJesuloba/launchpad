@@ -44,6 +44,12 @@ export function useSoroban() {
     [networkConfig],
   );
 
+  const fetchAccountBalances = useCallback(
+    (publicKey: string) =>
+      stellar.fetchAccountBalances(publicKey, networkConfig),
+    [networkConfig],
+  );
+
   return useMemo(
     () => ({
       fetchTokenInfo,
@@ -51,6 +57,7 @@ export function useSoroban() {
       fetchCurrentLedger,
       fetchVestingSchedule,
       fetchSupplyBreakdown,
+      fetchAccountBalances,
       networkConfig,
       // Pass through formatting helpers which don't need config
       formatTokenAmount: stellar.formatTokenAmount,
@@ -62,6 +69,7 @@ export function useSoroban() {
       fetchCurrentLedger,
       fetchVestingSchedule,
       fetchSupplyBreakdown,
+      fetchAccountBalances,
       networkConfig,
     ],
   );

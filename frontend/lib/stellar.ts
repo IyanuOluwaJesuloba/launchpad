@@ -527,6 +527,51 @@ export async function fetchAccountOperations(
 }
 
 // ---------------------------------------------------------------------------
+// Account balance helpers
+// ---------------------------------------------------------------------------
+
+export interface AccountBalance {
+  assetType: "native" | "credit_alphanum4" | "credit_alphanum12";
+  assetCode: string;
+  assetIssuer: string;
+  balance: string;
+}
+
+/**
+ * Fetch all balances for a Stellar account from Horizon.
+ */
+export async function fetchAccountBalances(
+  publicKey: string,
+  config: NetworkConfig,
+): Promise<AccountBalance[]> {
+  const horizon = new StellarSdk.Horizon.Server(config.horizonUrl);
+  const account = await horizon.loadAccount(publicKey);
+
+  return account.balances.map((bal) => {
+    if (bal.asset_type === "native") {
+      return {
+        assetType: "native" as const,
+        assetCode: "XLM",
+        assetIssuer: "",
+        balance: bal.balance,
+      };
+    }
+    const b = bal as unknown as {
+      asset_type: string;
+      asset_code: string;
+      asset_issuer: string;
+      balance: string;
+    };
+    return {
+      assetType: b.asset_type as AccountBalance["assetType"],
+      assetCode: b.asset_code,
+      assetIssuer: b.asset_issuer,
+      balance: b.balance,
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Formatting helpers
 // ---------------------------------------------------------------------------
 
@@ -583,6 +628,27 @@ export async function fetchTokenDecimals(
 export function truncateAddress(addr: string, chars = 4): string {
   if (addr.length <= chars * 2 + 3) return addr;
   return `${addr.slice(0, chars + 1)}...${addr.slice(-chars)}`;
+}
+
+// ---------------------------------------------------------------------------
+// Stellar Expert link helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Generate a Stellar Expert URL for various blockchain entities.
+ *
+ * @param type - The type of entity: 'account', 'contract', or 'tx'
+ * @param identifier - The public key, contract ID, or transaction hash
+ * @param network - The network type ('testnet' or 'mainnet')
+ * @returns The full Stellar Expert URL
+ */
+export function getStellarExpertUrl(
+  type: "account" | "contract" | "tx",
+  identifier: string,
+  network: "testnet" | "mainnet" = "testnet",
+): string {
+  const baseUrl = "https://stellar.expert/explorer";
+  return `${baseUrl}/${network}/${type}/${identifier}`;
 }
 
 // ---------------------------------------------------------------------------
