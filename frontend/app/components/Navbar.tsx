@@ -4,14 +4,22 @@ import Link from "next/link";
 import { useNetwork } from "../providers/NetworkProvider";
 import { WalletButton } from "./WalletButton";
 import { SettingsModal } from "./SettingsModal";
-import { Globe, ChevronDown } from "lucide-react";
+import { Globe, ChevronDown, Menu, X } from "lucide-react";
 import { useState } from "react";
+
+const navLinks = [
+  { href: "/deploy", label: "Deploy" },
+  { href: "/dashboard", label: "Dashboard" },
+  { href: "/my-account", label: "My Account" },
+] as const;
 
 /**
  * Top navbar — extracted as a client component so wallet state
  * (via `useWallet` inside `<WalletButton>`) works with React hooks.
  */
 export function Navbar() {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   return (
     <nav className="fixed top-0 z-50 w-full border-b border-white/5 bg-void-900/80 backdrop-blur-lg">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
@@ -24,20 +32,17 @@ export function Navbar() {
           <span className="gradient-text">SoroPad</span>
         </Link>
 
-        {/* Nav links */}
+        {/* Desktop nav links */}
         <div className="hidden items-center gap-6 md:flex">
-          <Link
-            href="/deploy"
-            className="text-sm text-gray-400 transition-colors hover:text-white"
-          >
-            Deploy
-          </Link>
-          <Link
-            href="/dashboard"
-            className="text-sm text-gray-400 transition-colors hover:text-white"
-          >
-            Dashboard
-          </Link>
+          {navLinks.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              className="text-sm text-gray-400 transition-colors hover:text-white"
+            >
+              {link.label}
+            </Link>
+          ))}
         </div>
 
         {/* Right side — wallet, settings & network */}
@@ -49,8 +54,39 @@ export function Navbar() {
 
           {/* Wallet connect / disconnect */}
           <WalletButton />
+
+          {/* Mobile menu toggle */}
+          <button
+            onClick={() => setMobileMenuOpen((prev) => !prev)}
+            className="ml-1 rounded-lg border border-white/10 bg-white/5 p-1.5 text-gray-400 transition-colors hover:bg-white/10 hover:text-white md:hidden"
+            aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
+          >
+            {mobileMenuOpen ? (
+              <X className="h-5 w-5" />
+            ) : (
+              <Menu className="h-5 w-5" />
+            )}
+          </button>
         </div>
       </div>
+
+      {/* Mobile nav drawer */}
+      {mobileMenuOpen && (
+        <div className="border-t border-white/5 bg-void-900/95 backdrop-blur-lg md:hidden">
+          <div className="flex flex-col gap-1 px-6 py-4">
+            {navLinks.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                onClick={() => setMobileMenuOpen(false)}
+                className="rounded-lg px-3 py-2.5 text-sm text-gray-400 transition-colors hover:bg-white/5 hover:text-white"
+              >
+                {link.label}
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
     </nav>
   );
 }

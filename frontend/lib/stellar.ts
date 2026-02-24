@@ -416,6 +416,51 @@ export async function fetchAccountOperations(
 }
 
 // ---------------------------------------------------------------------------
+// Account balance helpers
+// ---------------------------------------------------------------------------
+
+export interface AccountBalance {
+  assetType: "native" | "credit_alphanum4" | "credit_alphanum12";
+  assetCode: string;
+  assetIssuer: string;
+  balance: string;
+}
+
+/**
+ * Fetch all balances for a Stellar account from Horizon.
+ */
+export async function fetchAccountBalances(
+  publicKey: string,
+  config: NetworkConfig,
+): Promise<AccountBalance[]> {
+  const horizon = new StellarSdk.Horizon.Server(config.horizonUrl);
+  const account = await horizon.loadAccount(publicKey);
+
+  return account.balances.map((bal) => {
+    if (bal.asset_type === "native") {
+      return {
+        assetType: "native" as const,
+        assetCode: "XLM",
+        assetIssuer: "",
+        balance: bal.balance,
+      };
+    }
+    const b = bal as unknown as {
+      asset_type: string;
+      asset_code: string;
+      asset_issuer: string;
+      balance: string;
+    };
+    return {
+      assetType: b.asset_type as AccountBalance["assetType"],
+      assetCode: b.asset_code,
+      assetIssuer: b.asset_issuer,
+      balance: b.balance,
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Formatting helpers
 // ---------------------------------------------------------------------------
 
