@@ -1,3 +1,5 @@
+import { RecentLaunches } from "./components/RecentLaunches";
+
 export default function Home() {
   return (
     <div className="relative overflow-hidden">
@@ -74,6 +76,9 @@ export default function Home() {
           ))}
         </div>
       </section>
+
+      {/* Recent Launches */}
+      <RecentLaunches />
     </div>
   );
 }
