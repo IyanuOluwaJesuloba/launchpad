@@ -15,6 +15,7 @@ pub enum DataKey {
     Symbol,
     Decimals,
     TotalSupply,
+    TotalBurned,
     MaxSupply,
     Balance(Address),
     Allowance(Address, Address), // (owner, spender)
@@ -248,6 +249,10 @@ pub fn unpause(env: Env) {
         env.storage().instance().get(&DataKey::TotalSupply).unwrap_or(0)
     }
 
+    pub fn total_burned(env: Env) -> i128 {
+        env.storage().instance().get(&DataKey::TotalBurned).unwrap_or(0)
+    }
+
     /// Returns `true` if the given address is frozen.
     pub fn is_frozen(env: Env, addr: Address) -> bool {
         env.storage().persistent().get(&DataKey::Frozen(addr)).unwrap_or(false)
@@ -304,6 +309,9 @@ pub fn unpause(env: Env) {
 
         let supply: i128 = env.storage().instance().get(&DataKey::TotalSupply).unwrap_or(0);
         env.storage().instance().set(&DataKey::TotalSupply, &(supply - amount));
+
+        let burned: i128 = env.storage().instance().get(&DataKey::TotalBurned).unwrap_or(0);
+        env.storage().instance().set(&DataKey::TotalBurned, &(burned + amount));
 
         env.events().publish((symbol_short!("burn"), from.clone()), amount);
     }
@@ -399,6 +407,40 @@ mod test {
         client.burn(&admin, &100_0000000i128);
         assert_eq!(client.balance(&admin), 1_000_000_0000000i128 - 100_0000000i128);
         assert_eq!(client.total_supply(), 1_000_000_0000000i128 - 100_0000000i128);
+    }
+
+    #[test]
+    fn test_total_burned_starts_at_zero() {
+        let (_, client, _, _) = setup();
+        assert_eq!(client.total_burned(), 0i128);
+    }
+
+    #[test]
+    fn test_total_burned_after_single_burn() {
+        let (_, client, admin, _) = setup();
+        client.burn(&admin, &100_0000000i128);
+        assert_eq!(client.total_burned(), 100_0000000i128);
+    }
+
+    #[test]
+    fn test_total_burned_after_two_burns() {
+        let (_, client, admin, _) = setup();
+        client.burn(&admin, &100_0000000i128);
+        client.burn(&admin, &250_0000000i128);
+        assert_eq!(client.total_burned(), 350_0000000i128);
+    }
+
+    #[test]
+    fn test_burn_updates_total_burned_and_total_supply_each_time() {
+        let (_, client, admin, _) = setup();
+
+        client.burn(&admin, &100_0000000i128);
+        assert_eq!(client.total_burned(), 100_0000000i128);
+        assert_eq!(client.total_supply(), 1_000_000_0000000i128 - 100_0000000i128);
+
+        client.burn(&admin, &250_0000000i128);
+        assert_eq!(client.total_burned(), 350_0000000i128);
+        assert_eq!(client.total_supply(), 1_000_000_0000000i128 - 350_0000000i128);
     }
 
     #[test]
