@@ -34,7 +34,7 @@ export async function mockFreighter(page: Page, publicKey = TEST_PUBLIC_KEY) {
       };
 
       // Freighter detection: the real extension sets this.
-      const w = window as Window & Record<string, unknown>;
+      const w = (window as unknown) as Record<string, unknown>;
       w.__FREIGHTER_API = api;
 
       // Some bundled builds read directly from window.freighter

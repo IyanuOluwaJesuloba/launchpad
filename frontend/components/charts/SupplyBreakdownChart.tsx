@@ -78,7 +78,7 @@ function CustomTooltip({ active, payload }: { active?: boolean; payload?: Array<
 /**
  * Custom legend component
  */
-function CustomLegend({ data }: { data: Array<{ name: string; value: number; percentage: number }> }) {
+function CustomLegend({ data }: { data: Array<{ name: string; value: number; percentage: number; color: string }> }) {
   const icons = {
     "Circulating Supply": <TrendingUp className="h-4 w-4" />,
     "Locked (Vesting)": <Lock className="h-4 w-4" />,

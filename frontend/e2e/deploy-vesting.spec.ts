@@ -44,9 +44,9 @@ test.describe("Deploy + Vesting E2E flow", () => {
   test("(1) mocks Freighter and shows connected wallet", async ({ page }) => {
     await page.goto("/");
 
-    // The WalletButton shows the full key as the button's title attribute
+    // The WalletButton shows the full key as the title attribute of a <span>
     // once the auto-reconnect in WalletProvider resolves.
-    const walletBadge = page.locator(`button[title="${ADMIN_KEY}"]`);
+    const walletBadge = page.locator(`[title="${ADMIN_KEY}"]`);
     await expect(walletBadge).toBeVisible({ timeout: 10_000 });
   });
 
@@ -59,7 +59,9 @@ test.describe("Deploy + Vesting E2E flow", () => {
     await expect(page.getByText("Token Metadata")).toBeVisible();
 
     await fillField(page, "Token Name", "TestCoin");
+    await expect(page.getByLabel("Token Name")).toHaveValue("TestCoin");
     await fillField(page, "Symbol", "TST");
+    await expect(page.getByLabel("Symbol")).toHaveValue("TST");
     // Decimals defaults to 7 — leave as-is
 
     await page.getByRole("button", { name: "Continue" }).click();
@@ -68,14 +70,15 @@ test.describe("Deploy + Vesting E2E flow", () => {
     await expect(page.getByText("Supply Configuration")).toBeVisible();
 
     await fillField(page, "Initial Supply", "1000000");
+    await expect(page.getByLabel("Initial Supply")).toHaveValue("1000000");
     // Leave max supply blank (uncapped)
 
     await page.getByRole("button", { name: "Continue" }).click();
 
     // ── Step 3: Admin ──
-    await expect(page.getByText("Administration")).toBeVisible();
+    await expect(page.getByText("Administration")).toBeVisible({ timeout: 10_000 });
 
-    await fillField(page, "Admin Address", ADMIN_KEY);
+    await fillField(page, "Admin Address (Stellar Public Key)", ADMIN_KEY);
 
     await page.getByRole("button", { name: "Continue" }).click();
 
