@@ -2,8 +2,6 @@
 
 import { useEffect, useState, useMemo, useCallback } from "react";
 import {
-  Copy,
-  Check,
   ArrowUpDown,
   AlertCircle,
   Loader2,
@@ -17,9 +15,13 @@ import {
 } from "@/lib/stellar";
 import { useSoroban } from "@/hooks/useSoroban";
 import VestingProgress from "./VestingProgress";
+import TransactionHistory from "./TransactionHistory";
 import { CopyButton } from "@/components/ui/CopyButton";
 import SupplyBreakdownChart from "@/components/charts/SupplyBreakdownChart";
 import { ExplorerLink } from "@/components/ui/ExplorerLink";
+import ActivityFeed from "./ActivityFeed";
+import { TransferPanel } from "./components/TransferPanel";
+import { UserPanel } from "./components/UserPanel";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -178,6 +180,7 @@ function HoldersTable({ holders }: { holders: TokenHolder[] }) {
 
   // Reset to page 1 when search changes
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCurrentPage(1);
   }, [searchQuery]);
 
@@ -233,7 +236,7 @@ function HoldersTable({ holders }: { holders: TokenHolder[] }) {
       <div className="glass-card overflow-hidden">
         {filtered.length === 0 ? (
           <div className="p-8 text-center text-gray-500">
-            <p>No holders found matching "{searchQuery}"</p>
+            <p>No holders found matching &quot;{searchQuery}&quot;</p>
           </div>
         ) : (
           <>
@@ -351,7 +354,6 @@ function HoldersTable({ holders }: { holders: TokenHolder[] }) {
                   <div className="flex items-center gap-1">
                     {Array.from({ length: totalPages }, (_, i) => i + 1)
                       .filter((page) => {
-                        // Show first page, last page, current page, and pages around current
                         return (
                           page === 1 ||
                           page === totalPages ||
@@ -359,7 +361,6 @@ function HoldersTable({ holders }: { holders: TokenHolder[] }) {
                         );
                       })
                       .map((page, idx, arr) => {
-                        // Add ellipsis if there's a gap
                         const prevPage = arr[idx - 1];
                         const showEllipsis = prevPage && page - prevPage > 1;
 
@@ -408,11 +409,6 @@ function HoldersTable({ holders }: { holders: TokenHolder[] }) {
   );
 }
 
-import ActivityFeed from "./ActivityFeed";
-import { TransferPanel } from "./components/TransferPanel";
-import { UserPanel } from "./components/UserPanel";
-
-
 // ---------------------------------------------------------------------------
 // Main dashboard component
 // ---------------------------------------------------------------------------
@@ -451,7 +447,7 @@ export default function TokenDashboard({ contractId }: { contractId: string }) {
     } finally {
       setLoading(false);
     }
-  }, [contractId]);
+  }, [contractId, fetchTokenInfo, fetchTopHolders, fetchSupplyBreakdown]);
 
   useEffect(() => {
     loadData();
@@ -545,6 +541,15 @@ export default function TokenDashboard({ contractId }: { contractId: string }) {
           Vesting Schedule
         </h2>
         <VestingProgress decimals={tokenInfo.decimals} />
+      </section>
+
+      {/* Transaction History */}
+      <section aria-label="Transaction history" className="mt-16 border-t border-white/5 pt-10">
+        <TransactionHistory
+          contractId={contractId}
+          decimals={tokenInfo.decimals}
+          symbol={tokenInfo.symbol}
+        />
       </section>
 
       {/* Token Activity Feed */}

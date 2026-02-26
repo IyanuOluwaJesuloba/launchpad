@@ -318,7 +318,7 @@ export function TransferPanel({
             No Balance Available
           </h3>
           <p className="text-sm text-gray-400">
-            You don't have any {tokenSymbol} tokens to transfer
+            You don&apos;t have any {tokenSymbol} tokens to transfer
           </p>
         </div>
       </section>

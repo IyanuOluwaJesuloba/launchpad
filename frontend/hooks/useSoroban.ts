@@ -62,6 +62,17 @@ export function useSoroban() {
     [networkConfig],
   );
 
+  const fetchTransactionHistory = useCallback(
+    (contractId: string) => stellar.fetchTransactionHistory(contractId, networkConfig),
+    [networkConfig],
+  );
+
+  const fetchAccountOperations = useCallback(
+    (accountId: string, cursor?: string, limit?: number) =>
+      stellar.fetchAccountOperations(accountId, cursor, limit),
+    [],
+  );
+
   const submitTransaction = useCallback(
     (signedXdr: string) => stellar.submitTransaction(signedXdr),
     [],
@@ -75,6 +86,8 @@ export function useSoroban() {
       fetchVestingSchedule,
       fetchSupplyBreakdown,
       fetchAccountBalances,
+      fetchTransactionHistory,
+      fetchAccountOperations,
       buildBurnTransaction,
       submitTransaction,
       networkConfig,
@@ -90,6 +103,8 @@ export function useSoroban() {
       fetchVestingSchedule,
       fetchSupplyBreakdown,
       fetchAccountBalances,
+      fetchTransactionHistory,
+      fetchAccountOperations,
       buildBurnTransaction,
       submitTransaction,
       networkConfig,

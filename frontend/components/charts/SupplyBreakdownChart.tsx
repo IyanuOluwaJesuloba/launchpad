@@ -49,7 +49,7 @@ function formatNumber(num: number): string {
 /**
  * Custom tooltip for the chart
  */
-function CustomTooltip({ active, payload }: any) {
+function CustomTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: { name: string; value: number; percentage: number } }> }) {
   if (!active || !payload || !payload.length) return null;
 
   const data = payload[0].payload;
@@ -78,7 +78,7 @@ function CustomTooltip({ active, payload }: any) {
 /**
  * Custom legend component
  */
-function CustomLegend({ data }: { data: any[] }) {
+function CustomLegend({ data }: { data: Array<{ name: string; value: number; percentage: number; color: string }> }) {
   const icons = {
     "Circulating Supply": <TrendingUp className="h-4 w-4" />,
     "Locked (Vesting)": <Lock className="h-4 w-4" />,

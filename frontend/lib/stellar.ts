@@ -54,6 +54,16 @@ export interface VestingScheduleInfo {
   revoked: boolean;
 }
 
+export interface TransactionItem {
+  type: "mint" | "burn" | "transfer";
+  from?: string;
+  to?: string;
+  amount: string;
+  timestamp: number;
+  ledger: number;
+  id: string;
+}
+
 export interface TokenAllowanceInfo {
   spenderAddress: string;
   amount: string;
@@ -409,6 +419,62 @@ export async function fetchVestingSchedule(
   };
 }
 
+/**
+ * Fetch transaction history (events) for a token contract.
+ */
+export async function fetchTransactionHistory(
+  contractId: string,
+  config: NetworkConfig,
+): Promise<TransactionItem[]> {
+  const currentLedger = await fetchCurrentLedger(config);
+  // Fetch events from a reasonable start point (e.g., 100,000 ledgers back or from start of Soroban)
+  // For testnet, ledgers are fast. Let's try to fetch a good chunk.
+  // In a real app, this would be indexed.
+  const startLedger = Math.max(1, currentLedger - 10000);
+
+  const response = await getRpc().getEvents({
+    startLedger,
+    filters: [
+      {
+        type: "contract",
+        contractIds: [contractId],
+      },
+    ],
+  });
+
+  const history: TransactionItem[] = [];
+
+  for (const event of response.events) {
+    const topics = event.topic;
+    const typePath = decodeString(topics[0]);
+
+    if (typePath === "mint" || typePath === "burn" || typePath === "transfer") {
+      const item: Partial<TransactionItem> = {
+        type: typePath as TransactionItem["type"],
+        ledger: event.ledger,
+        timestamp: 0,
+        id: event.id,
+      };
+
+      const data = event.value;
+      item.amount = decodeI128(data);
+
+      if (typePath === "mint" && topics.length > 1) {
+        item.to = decodeAddress(topics[1]);
+      } else if (typePath === "burn" && topics.length > 1) {
+        item.from = decodeAddress(topics[1]);
+      } else if (typePath === "transfer" && topics.length > 2) {
+        item.from = decodeAddress(topics[1]);
+        item.to = decodeAddress(topics[2]);
+      }
+
+      history.push(item as TransactionItem);
+    }
+  }
+
+  return history.reverse(); // Newest first
+}
+
 export interface TokenActivityInfo {
   id: string;
   pagingToken: string;
@@ -551,10 +617,6 @@ export async function fetchAccountOperations(
     return { records: [], nextCursor: null };
   }
 }
-
-// ---------------------------------------------------------------------------
-// Account balance helpers
-// ---------------------------------------------------------------------------
 
 export interface AccountBalance {
   assetType: "native" | "credit_alphanum4" | "credit_alphanum12";

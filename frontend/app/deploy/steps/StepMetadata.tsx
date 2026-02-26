@@ -1,11 +1,10 @@
 import { UseFormRegister, FieldErrors } from "react-hook-form";
 import { Input } from "@/components/ui/Input";
+import { DeployFormData } from "../DeployForm";
 
 interface StepProps {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    register: UseFormRegister<any>;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    errors: FieldErrors<any>;
+    register: UseFormRegister<DeployFormData>;
+    errors: FieldErrors<DeployFormData>;
 }
 
 export const StepMetadata = ({ register, errors }: StepProps) => {

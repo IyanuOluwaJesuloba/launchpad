@@ -26,6 +26,7 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const saved = localStorage.getItem("soropad:network") as NetworkType;
     if (saved && (saved === "testnet" || saved === "mainnet")) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setNetworkState(saved);
     }
     setMounted(true);

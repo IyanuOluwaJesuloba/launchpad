@@ -12,14 +12,14 @@ const ADMIN_KEY = TEST_PUBLIC_KEY;
 // deploy step; for now we use a deterministic stub so the dashboard route
 // can be tested independently.
 const STUB_CONTRACT_ID =
-  process.env.TEST_CONTRACT_ID ??
+  process.env.TEST_CONTRACT_ID ||
   "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Fill a labelled input field. Clears any existing value first. */
+/** Fill a text input found by its label. Clears existing value first. */
 async function fillField(
   page: import("@playwright/test").Page,
   label: string,
@@ -28,6 +28,21 @@ async function fillField(
   const input = page.getByLabel(label);
   await input.click();
   await input.fill(value);
+}
+
+/**
+ * Fill a number input found by its `name` attribute.
+ * Uses triple-click + keyboard.type() so React's onChange fires reliably for
+ * react-hook-form fields registered with `valueAsNumber: true`.
+ */
+async function fillNumberInput(
+  page: import("@playwright/test").Page,
+  name: string,
+  value: string,
+) {
+  const input = page.locator(`input[name="${name}"]`);
+  await input.click({ clickCount: 3 }); // select all existing content
+  await page.keyboard.type(value);      // fire per-character input events
 }
 
 // ---------------------------------------------------------------------------
@@ -44,9 +59,9 @@ test.describe("Deploy + Vesting E2E flow", () => {
   test("(1) mocks Freighter and shows connected wallet", async ({ page }) => {
     await page.goto("/");
 
-    // The WalletButton should show the truncated public key once the
-    // auto-reconnect in WalletProvider resolves.
-    const walletBadge = page.locator(`text=${ADMIN_KEY.slice(0, 4)}`);
+    // The WalletButton shows the full key as the title attribute of a <span>
+    // once the auto-reconnect in WalletProvider resolves.
+    const walletBadge = page.locator(`[title="${ADMIN_KEY}"]`);
     await expect(walletBadge).toBeVisible({ timeout: 10_000 });
   });
 
@@ -59,7 +74,9 @@ test.describe("Deploy + Vesting E2E flow", () => {
     await expect(page.getByText("Token Metadata")).toBeVisible();
 
     await fillField(page, "Token Name", "TestCoin");
+    await expect(page.getByLabel("Token Name")).toHaveValue("TestCoin");
     await fillField(page, "Symbol", "TST");
+    await expect(page.getByLabel("Symbol")).toHaveValue("TST");
     // Decimals defaults to 7 — leave as-is
 
     await page.getByRole("button", { name: "Continue" }).click();
@@ -67,15 +84,17 @@ test.describe("Deploy + Vesting E2E flow", () => {
     // ── Step 2: Supply ──
     await expect(page.getByText("Supply Configuration")).toBeVisible();
 
-    await fillField(page, "Initial Supply", "1000000");
+    // Use keyboard.type() for number inputs so react-hook-form's onChange fires.
+    await fillNumberInput(page, "initialSupply", "1000000");
+    await expect(page.locator('input[name="initialSupply"]')).toHaveValue("1000000");
     // Leave max supply blank (uncapped)
 
     await page.getByRole("button", { name: "Continue" }).click();
 
     // ── Step 3: Admin ──
-    await expect(page.getByText("Admin Address")).toBeVisible();
+    await expect(page.getByText("Administration")).toBeVisible({ timeout: 10_000 });
 
-    await fillField(page, "Admin Public Key", ADMIN_KEY);
+    await fillField(page, "Admin Address (Stellar Public Key)", ADMIN_KEY);
 
     await page.getByRole("button", { name: "Continue" }).click();
 

@@ -35,7 +35,7 @@ export function Tabs({ value, onValueChange, children, className }: TabsProps) {
     <div className={className}>
       {React.Children.map(children, (child) =>
         React.isValidElement(child)
-          ? React.cloneElement(child as React.ReactElement<any>, {
+          ? React.cloneElement(child as React.ReactElement<Record<string, unknown>>, {
               _value: value,
               _onValueChange: onValueChange,
             })

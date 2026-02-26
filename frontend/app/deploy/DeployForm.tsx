@@ -26,7 +26,7 @@ const deploySchema = z.object({
     path: ["initialSupply"],
 });
 
-type DeployFormData = z.infer<typeof deploySchema>;
+export type DeployFormData = z.infer<typeof deploySchema>;
 
 const STEPS = [
     "Metadata",

@@ -9,8 +9,9 @@ async function main() {
             .call();
 
         console.log("Success with C... address!", response.records.length);
-    } catch (e: any) {
-        console.error("Error with C... address:", e.response?.data || e.message);
+    } catch (e) {
+        const err = e as { response?: { data: unknown }; message?: string };
+        console.error("Error with C... address:", err.response?.data || err.message);
     }
 }
 
