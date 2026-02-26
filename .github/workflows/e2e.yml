@@ -30,9 +30,11 @@ jobs:
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
+        working-directory: frontend
 
       - name: Run Playwright tests
-        run: npx playwright test
+        run: npx playwright test --config ../playwright.config.ts
+        working-directory: frontend
         env:
           CI: true
 

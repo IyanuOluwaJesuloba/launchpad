@@ -3,11 +3,11 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { Download, FileText, Table as TableIcon, Loader2, AlertCircle, ChevronDown } from "lucide-react";
 import {
-    fetchTransactionHistory,
     formatTokenAmount,
     truncateAddress,
     type TransactionItem
 } from "@/lib/stellar";
+import { useSoroban } from "@/hooks/useSoroban";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
@@ -28,6 +28,8 @@ export default function TransactionHistory({
     const [error, setError] = useState<string | null>(null);
     const [showExportOptions, setShowExportOptions] = useState(false);
 
+    const { fetchTransactionHistory } = useSoroban();
+
     const loadHistory = useCallback(async () => {
         setLoading(true);
         setError(null);
@@ -41,7 +43,7 @@ export default function TransactionHistory({
         } finally {
             setLoading(false);
         }
-    }, [contractId]);
+    }, [contractId, fetchTransactionHistory]);
 
     useEffect(() => {
         loadHistory();
@@ -232,8 +234,8 @@ export default function TransactionHistory({
                                     <tr key={tx.id} className="transition-colors hover:bg-white/[0.02]">
                                         <td className="px-4 py-4">
                                             <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${tx.type === "mint" ? "bg-green-500/10 text-green-400" :
-                                                    tx.type === "burn" ? "bg-red-500/10 text-red-400" :
-                                                        "bg-blue-500/10 text-blue-400"
+                                                tx.type === "burn" ? "bg-red-500/10 text-red-400" :
+                                                    "bg-blue-500/10 text-blue-400"
                                                 }`}>
                                                 {tx.type}
                                             </span>
