@@ -34,6 +34,7 @@ import {
     ExternalLink,
     Clock
 } from "lucide-react";
+import { VestingCurveChart } from "@/components/VestingCurveChart";
 
 /* ── Constants ────────────────────────────────────────────────── */
 
@@ -94,6 +95,11 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
     const burnForm = useForm<BurnData>({ resolver: zodResolver(burnSchema) });
     const transferForm = useForm<TransferAdminData>({ resolver: zodResolver(transferAdminSchema) });
     const vestingForm = useForm<VestingData>({ resolver: zodResolver(vestingSchema) });
+
+    // Live values for the vesting curve preview chart.
+    const [watchedCliff, watchedDuration] = vestingForm.watch(["cliffDays", "durationDays"]);
+    const chartCliffDays = Math.max(0, Number(watchedCliff) || 0);
+    const chartDurationDays = Math.max(0, Number(watchedDuration) || 0);
 
     const handleBatchMint = async (entries: BatchMintEntry[]) => {
         if (!publicKey) return;
@@ -457,10 +463,16 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
                                 error={vestingForm.formState.errors.durationDays?.message}
                             />
                         </div>
+                        {chartDurationDays > 0 && (
+                            <VestingCurveChart
+                                cliffDays={chartCliffDays}
+                                durationDays={chartDurationDays}
+                            />
+                        )}
                         <Input
-                            label="Total Amount"
-                            type="number"
-                            placeholder="0.00"
+                            label="Total Amount" 
+                            type="number" 
+                            placeholder="0.00" 
                             className="bg-white/5 border-white/10"
                             {...vestingForm.register("amount")}
                             error={vestingForm.formState.errors.amount?.message}
