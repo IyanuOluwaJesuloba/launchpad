@@ -102,6 +102,27 @@ impl TokenContract {
         Self::_burn(&env, &from, amount);
     }
 
+    /// Mint `amount` tokens to multiple recipients. Admin only.
+    pub fn mint_batch(env: Env, to: soroban_sdk::Vec<Address>, amounts: soroban_sdk::Vec<i128>) {
+        Self::_check_paused(&env);
+        Self::_require_admin(&env);
+        assert!(to.len() == amounts.len(), "mismatching lengths");
+        for i in 0..to.len() {
+            let recipient = to.get(i).unwrap();
+            let amount = amounts.get(i).unwrap();
+            assert!(amount > 0, "amount must be positive");
+            Self::_mint(&env, &recipient, amount);
+        }
+    }
+
+    /// Burn `amount` tokens from the caller's own balance.
+    pub fn burn_self(env: Env, from: Address, amount: i128) {
+        Self::_check_paused(&env);
+        from.require_auth();
+        assert!(amount > 0, "amount must be positive");
+        Self::_burn(&env, &from, amount);
+    }
+
     /// Propose a new admin. Must be called by the current admin.
     /// The new admin must call `accept_admin` to finalize the transfer.
     pub fn propose_admin(env: Env, new_admin: Address) {
@@ -495,6 +516,50 @@ mod test {
             client.total_supply(),
             1_000_000_0000000i128 - 100_0000000i128
         );
+    }
+
+    #[test]
+    fn test_burn_self() {
+        let (_, client, _, user) = setup();
+        client.mint(&user, &1000i128);
+        client.burn_self(&user, &500i128);
+        assert_eq!(client.balance(&user), 500i128);
+    }
+
+    #[test]
+    fn test_mint_batch() {
+        let (env, client, _, _) = setup();
+        let u1 = Address::generate(&env);
+        let u2 = Address::generate(&env);
+
+        let mut to = soroban_sdk::Vec::new(&env);
+        to.push_back(u1.clone());
+        to.push_back(u2.clone());
+
+        let mut amounts = soroban_sdk::Vec::new(&env);
+        amounts.push_back(100i128);
+        amounts.push_back(200i128);
+
+        client.mint_batch(&to, &amounts);
+
+        assert_eq!(client.balance(&u1), 100i128);
+        assert_eq!(client.balance(&u2), 200i128);
+    }
+
+    #[test]
+    #[should_panic(expected = "mismatching lengths")]
+    fn test_mint_batch_len_mismatch() {
+        let (env, client, _, _) = setup();
+        let u1 = Address::generate(&env);
+
+        let mut to = soroban_sdk::Vec::new(&env);
+        to.push_back(u1);
+
+        let mut amounts = soroban_sdk::Vec::new(&env);
+        amounts.push_back(100i128);
+        amounts.push_back(200i128);
+
+        client.mint_batch(&to, &amounts);
     }
 
     #[test]

@@ -7,27 +7,28 @@ import * as z from "zod";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useWallet } from "../../../hooks/useWallet";
-import { 
-    addressToScVal, 
+import {
+    addressToScVal,
     i128ToScVal,
-    nativeToScVal 
+    nativeToScVal
 } from "@/lib/soroban";
-import { 
+import {
     parseBatchMintData,
     parseBatchMintFile,
     BatchMintEntry
 } from "@/lib/batch";
-import { 
-    TransactionBuilder, 
-    Networks, 
+import {
+    TransactionBuilder,
+    Networks,
     rpc,
     Contract,
+    Address,
     xdr
 } from "@stellar/stellar-sdk";
-import { 
-    Coins, 
-    Flame, 
-    UserPlus, 
+import {
+    Coins,
+    Flame,
+    UserPlus,
     ShieldAlert,
     CheckCircle2,
     ExternalLink,
@@ -82,7 +83,7 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
     const [lastTxHash, setLastTxHash] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
     const [showTransferConfirm, setShowTransferConfirm] = useState(false);
-    
+
     const [mintMode, setMintMode] = useState<"single" | "batch">("single");
     const [batchData, setBatchData] = useState("");
     const [batchErrors, setBatchErrors] = useState<string[]>([]);
@@ -96,7 +97,7 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
 
     const handleBatchMint = async (entries: BatchMintEntry[]) => {
         if (!publicKey) return;
-        
+
         setLoading("batch-mint");
         setSuccess(null);
         setLastTxHash(null);
@@ -105,33 +106,32 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
             const server = new rpc.Server(RPC_URL);
             const account = await server.getAccount(publicKey);
             const contract = new Contract(contractId);
-            
-            const txBuilder = new TransactionBuilder(account, { 
-                fee: (1000 * entries.length).toString(), // Scaled fee
-                networkPassphrase: NETWORK_PASSPHRASE 
-            });
 
-            entries.forEach(entry => {
-                txBuilder.addOperation(
-                    contract.call("mint", addressToScVal(entry.address), i128ToScVal(BigInt(entry.amount)))
-                );
-            });
+            // Prepare ScVals for the new mint_batch function
+            const addressesScVal = nativeToScVal(entries.map(e => new Address(e.address)), { type: "vec" });
+            const amountsScVal = nativeToScVal(entries.map(e => BigInt(e.amount)), { type: "vec" });
 
-            const tx = txBuilder.setTimeout(30).build();
+            const tx = new TransactionBuilder(account, {
+                fee: "1000",
+                networkPassphrase: NETWORK_PASSPHRASE
+            })
+                .addOperation(contract.call("mint_batch", addressesScVal, amountsScVal))
+                .setTimeout(30)
+                .build();
 
             // 3. Sign and Submit
             const xdrEncoded = tx.toXDR();
             console.log(`Signing batch mint tx for ${contractId} with ${entries.length} recipients`);
-            
+
             await signTransaction(xdrEncoded, { networkPassphrase: NETWORK_PASSPHRASE });
-            
+
             // Mocking submission success
             await new Promise(r => setTimeout(r, 2000));
             const mockHash = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-            
+
             setLastTxHash(mockHash);
             setSuccess("batch-mint");
-            
+
         } catch (err) {
             const error = err as Error;
             console.error(`batch-mint failed:`, error);
@@ -143,14 +143,14 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
 
     const handleAction = async (action: string, data: AdminActionData) => {
         if (!publicKey) return;
-        
+
         setLoading(action);
         setSuccess(null);
         setLastTxHash(null);
 
         try {
             const server = new rpc.Server(RPC_URL);
-            
+
             // 1. Prepare Arguments
             let method = "";
             let args: xdr.ScVal[] = [];
@@ -161,7 +161,7 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
                 args = [addressToScVal(mintData.to), i128ToScVal(BigInt(mintData.amount))];
             } else if (action === "burn") {
                 const burnData = data as BurnData;
-                method = "burn";
+                method = "burn_admin"; // Use administrative burn
                 args = [addressToScVal(burnData.from), i128ToScVal(BigInt(burnData.amount))];
             } else if (action === "transfer") {
                 const transferData = data as TransferAdminData;
@@ -170,14 +170,14 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
             } else if (action === "vesting") {
                 const vestingData = data as VestingData;
                 method = "create_schedule";
-                
+
                 // Ledger logic: 1 day ≈ 17,280 ledgers
                 const currentLedgerRes = await server.getLatestLedger();
                 const currentLedger = currentLedgerRes.sequence;
-                
+
                 const cliffLedgers = Math.round(Number(vestingData.cliffDays) * 17280);
                 const durationLedgers = Math.round(Number(vestingData.durationDays) * 17280);
-                
+
                 const cliffLedger = currentLedger + cliffLedgers;
                 const endLedger = cliffLedger + durationLedgers;
 
@@ -193,29 +193,29 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
             const targetContractId = action === "vesting" ? (data as VestingData).vestingContract : contractId;
             const account = await server.getAccount(publicKey);
             const contract = new Contract(targetContractId);
-            
-            const tx = new TransactionBuilder(account, { 
+
+            const tx = new TransactionBuilder(account, {
                 fee: "1000", // Standard fee
-                networkPassphrase: NETWORK_PASSPHRASE 
+                networkPassphrase: NETWORK_PASSPHRASE
             })
-            .addOperation(contract.call(method, ...args))
-            .setTimeout(30)
-            .build();
+                .addOperation(contract.call(method, ...args))
+                .setTimeout(30)
+                .build();
 
             // 3. Sign and Submit
             const xdrEncoded = tx.toXDR();
             console.log(`Signing ${action} tx for ${contractId}`);
-            
+
             // Note: signTransaction's first argument is the XDR string
             await signTransaction(xdrEncoded, { networkPassphrase: NETWORK_PASSPHRASE });
-            
+
             // Mocking submission success for the purpose of the dashboard UI
             await new Promise(r => setTimeout(r, 2000));
             const mockHash = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-            
+
             setLastTxHash(mockHash);
             setSuccess(action);
-            
+
             if (action === "mint") mintForm.reset();
             if (action === "burn") burnForm.reset();
             if (action === "transfer") {
@@ -240,7 +240,7 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
                     <h2 className="text-2xl font-bold text-white tracking-tight">Admin Console</h2>
                 </div>
                 {lastTxHash && (
-                    <a 
+                    <a
                         href={`https://stellar.expert/explorer/futurenet/tx/${lastTxHash}`}
                         target="_blank"
                         rel="noopener noreferrer"
@@ -252,7 +252,7 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-12">
-                
+
                 {/* ── Mint Form ─────────────────────────────────────── */}
                 <div className="glass-card p-6 flex flex-col hover:border-stellar-500/30 transition-all duration-300 group">
                     <div className="flex items-center justify-between mb-6">
@@ -263,13 +263,13 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
                             <h3 className="font-bold text-lg">Mint Assets</h3>
                         </div>
                         <div className="flex bg-white/5 p-1 rounded-lg border border-white/10">
-                            <button 
+                            <button
                                 onClick={() => setMintMode("single")}
                                 className={`px-3 py-1 text-xs rounded-md transition-all ${mintMode === "single" ? "bg-stellar-500 text-white shadow-lg" : "text-gray-400 hover:text-white"}`}
                             >
                                 Single
                             </button>
-                            <button 
+                            <button
                                 onClick={() => setMintMode("batch")}
                                 className={`px-3 py-1 text-xs rounded-md transition-all ${mintMode === "batch" ? "bg-stellar-500 text-white shadow-lg" : "text-gray-400 hover:text-white"}`}
                             >
@@ -280,24 +280,24 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
 
                     {mintMode === "single" ? (
                         <form onSubmit={mintForm.handleSubmit((data) => handleAction("mint", data))} className="space-y-4 flex-grow">
-                            <Input 
-                                label="Recipient Address" 
-                                placeholder="G..." 
+                            <Input
+                                label="Recipient Address"
+                                placeholder="G..."
                                 className="bg-white/5 border-white/10"
                                 {...mintForm.register("to")}
                                 error={mintForm.formState.errors.to?.message}
                             />
-                            <Input 
-                                label="Amount" 
-                                type="number" 
-                                placeholder="0.00" 
+                            <Input
+                                label="Amount"
+                                type="number"
+                                placeholder="0.00"
                                 className="bg-white/5 border-white/10"
                                 {...mintForm.register("amount")}
                                 error={mintForm.formState.errors.amount?.message}
                             />
-                            <Button 
-                                type="submit" 
-                                className="w-full mt-4 shadow-lg shadow-stellar-500/20" 
+                            <Button
+                                type="submit"
+                                className="w-full mt-4 shadow-lg shadow-stellar-500/20"
                                 isLoading={loading === "mint"}
                                 disabled={!!loading}
                             >
@@ -310,7 +310,7 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
                         <div className="space-y-4 flex-grow">
                             <div className="flex flex-col gap-2">
                                 <label className="text-sm font-medium text-gray-300">Manual Entry (Address, Amount)</label>
-                                <textarea 
+                                <textarea
                                     className="w-full h-32 bg-white/5 border border-white/10 rounded-xl p-3 text-sm text-stellar-100 placeholder:text-gray-600 focus:outline-none focus:ring-1 focus:ring-stellar-500/50 resize-none"
                                     placeholder="GC7... , 100.0&#10;GD2... , 50.5"
                                     value={batchData}
@@ -322,7 +322,7 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
                                     }}
                                 />
                             </div>
-                            
+
                             <div className="relative">
                                 <div className="absolute inset-0 flex items-center" aria-hidden="true">
                                     <div className="w-full border-t border-white/5"></div>
@@ -332,8 +332,8 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
                                 </div>
                             </div>
 
-                            <input 
-                                type="file" 
+                            <input
+                                type="file"
                                 accept=".csv"
                                 className="block w-full text-xs text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-stellar-500/10 file:text-stellar-400 hover:file:bg-stellar-500/20 transition-all cursor-pointer"
                                 onChange={async (e) => {
@@ -363,9 +363,9 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
                                 </div>
                             )}
 
-                            <Button 
-                                type="button" 
-                                className="w-full mt-2 shadow-lg shadow-stellar-500/20" 
+                            <Button
+                                type="button"
+                                className="w-full mt-2 shadow-lg shadow-stellar-500/20"
                                 isLoading={loading === "batch-mint"}
                                 disabled={!!loading || parsedEntries.length === 0 || batchErrors.length > 0}
                                 onClick={() => handleBatchMint(parsedEntries)}
@@ -387,25 +387,25 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
                         <h3 className="font-bold text-lg">Burn Assets</h3>
                     </div>
                     <form onSubmit={burnForm.handleSubmit((data) => handleAction("burn", data))} className="space-y-4 flex-grow">
-                        <Input 
-                            label="Source Address" 
-                            placeholder="G..." 
+                        <Input
+                            label="Source Address"
+                            placeholder="G..."
                             className="bg-white/5 border-white/10"
                             {...burnForm.register("from")}
                             error={burnForm.formState.errors.from?.message}
                         />
-                        <Input 
-                            label="Amount" 
-                            type="number" 
-                            placeholder="0.00" 
+                        <Input
+                            label="Amount"
+                            type="number"
+                            placeholder="0.00"
                             className="bg-white/5 border-white/10"
                             {...burnForm.register("amount")}
                             error={burnForm.formState.errors.amount?.message}
                         />
-                        <Button 
-                            type="submit" 
+                        <Button
+                            type="submit"
                             variant="secondary"
-                            className="w-full mt-4 border-red-500/20 hover:border-red-500/40 text-red-400" 
+                            className="w-full mt-4 border-red-500/20 hover:border-red-500/40 text-red-400"
                             isLoading={loading === "burn"}
                             disabled={!!loading}
                         >
@@ -425,49 +425,49 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
                         <h3 className="font-bold text-lg">Create Vesting</h3>
                     </div>
                     <form onSubmit={vestingForm.handleSubmit((data) => handleAction("vesting", data))} className="space-y-4 flex-grow">
-                        <Input 
-                            label="Vesting Contract" 
-                            placeholder="C..." 
+                        <Input
+                            label="Vesting Contract"
+                            placeholder="C..."
                             className="bg-white/5 border-white/10"
                             {...vestingForm.register("vestingContract")}
                             error={vestingForm.formState.errors.vestingContract?.message}
                         />
-                        <Input 
-                            label="Recipient Address" 
-                            placeholder="G..." 
+                        <Input
+                            label="Recipient Address"
+                            placeholder="G..."
                             className="bg-white/5 border-white/10"
                             {...vestingForm.register("recipient")}
                             error={vestingForm.formState.errors.recipient?.message}
                         />
                         <div className="grid grid-cols-2 gap-4">
-                            <Input 
-                                label="Cliff (Days)" 
-                                type="number" 
-                                placeholder="0" 
+                            <Input
+                                label="Cliff (Days)"
+                                type="number"
+                                placeholder="0"
                                 className="bg-white/5 border-white/10"
                                 {...vestingForm.register("cliffDays")}
                                 error={vestingForm.formState.errors.cliffDays?.message}
                             />
-                            <Input 
-                                label="Duration (Days)" 
-                                type="number" 
-                                placeholder="365" 
+                            <Input
+                                label="Duration (Days)"
+                                type="number"
+                                placeholder="365"
                                 className="bg-white/5 border-white/10"
                                 {...vestingForm.register("durationDays")}
                                 error={vestingForm.formState.errors.durationDays?.message}
                             />
                         </div>
-                        <Input 
-                            label="Total Amount" 
-                            type="number" 
-                            placeholder="0.00" 
+                        <Input
+                            label="Total Amount"
+                            type="number"
+                            placeholder="0.00"
                             className="bg-white/5 border-white/10"
                             {...vestingForm.register("amount")}
                             error={vestingForm.formState.errors.amount?.message}
                         />
-                        <Button 
-                            type="submit" 
-                            className="w-full mt-4 bg-stellar-500 hover:bg-stellar-600 text-white shadow-lg shadow-stellar-500/20" 
+                        <Button
+                            type="submit"
+                            className="w-full mt-4 bg-stellar-500 hover:bg-stellar-600 text-white shadow-lg shadow-stellar-500/20"
                             isLoading={loading === "vesting"}
                             disabled={!!loading}
                         >
@@ -486,22 +486,22 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
                         </div>
                         <h3 className="font-bold text-lg">Transfer Admin</h3>
                     </div>
-                    <form 
-                        onSubmit={transferForm.handleSubmit(() => setShowTransferConfirm(true))} 
+                    <form
+                        onSubmit={transferForm.handleSubmit(() => setShowTransferConfirm(true))}
                         className="space-y-4 flex-grow"
                     >
-                        <Input 
-                            label="New Admin Address" 
-                            placeholder="G..." 
+                        <Input
+                            label="New Admin Address"
+                            placeholder="G..."
                             className="bg-white/5 border-white/10"
                             {...transferForm.register("newAdmin")}
                             error={transferForm.formState.errors.newAdmin?.message}
                             disabled={showTransferConfirm}
                         />
-                        
+
                         {!showTransferConfirm ? (
-                            <Button 
-                                type="submit" 
+                            <Button
+                                type="submit"
                                 className="w-full mt-4 bg-white/5 border-white/10 hover:bg-white/10 text-white"
                                 disabled={!!loading}
                             >
@@ -516,7 +516,7 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
                                     You will permanently lose all administrative rights to this token contract.
                                 </p>
                                 <div className="flex gap-2">
-                                    <Button 
+                                    <Button
                                         type="button"
                                         variant="secondary"
                                         className="flex-1 text-xs py-2 h-9"
@@ -525,7 +525,7 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
                                     >
                                         Cancel
                                     </Button>
-                                    <Button 
+                                    <Button
                                         type="button"
                                         className="flex-1 text-xs py-2 h-9 bg-red-600 hover:bg-red-700 border-none shadow-lg shadow-red-600/20"
                                         onClick={() => handleAction("transfer", transferForm.getValues())}
