@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -12,6 +12,8 @@ import { StepSupply } from "./steps/StepSupply";
 import { StepAdmin } from "./steps/StepAdmin";
 import { StepReview } from "./steps/StepReview";
 import { useTransactionSimulator } from "@/hooks/useTransactionSimulator";
+import { useWallet } from "@/hooks/useWallet";
+import { savePendingMetadata } from "./utils/metadata";
 import { ArrowLeft, ArrowRight, Rocket } from "lucide-react";
 
 const deploySchema = z
@@ -24,6 +26,12 @@ const deploySchema = z
     adminAddress: z
       .string()
       .regex(/^G[A-Z2-7]{55}$/, "Invalid Stellar public key"),
+    // Optional metadata fields
+    description: z.string().optional(),
+    logoUrl: z.string().optional(),
+    website: z.string().optional(),
+    twitter: z.string().optional(),
+    discord: z.string().optional(),
   })
   .refine((data) => !data.maxSupply || data.initialSupply <= data.maxSupply, {
     message: "Initial supply cannot exceed maximum supply",
@@ -44,6 +52,10 @@ export default function DeployForm() {
     warnings: string[];
   } | null>(null);
 
+  const { publicKey } = useWallet();
+  const COOLDOWN_MS = 60_000;
+  const [cooldownRemaining, setCooldownRemaining] = useState(0);
+
   const simulator = useTransactionSimulator();
   console.log(simulator);
 
@@ -63,6 +75,11 @@ export default function DeployForm() {
       name: "",
       symbol: "",
       adminAddress: "",
+      description: "",
+      logoUrl: "",
+      website: "",
+      twitter: "",
+      discord: "",
     },
   });
 
@@ -109,6 +126,25 @@ export default function DeployForm() {
         warnings: [],
       });
 
+      // Save metadata client-side for now. If a real contractId is returned
+      // by the deployment flow, the metadata should be re-keyed by that ID.
+      try {
+        savePendingMetadata(data.symbol, {
+          description: data.description,
+          logoUrl: data.logoUrl,
+          website: data.website,
+          twitter: data.twitter,
+          discord: data.discord,
+        });
+      } catch {}
+
+      // Set client-side deploy cooldown (per-wallet)
+      try {
+        const key = `soropad:lastDeploy:${publicKey ?? "anonymous"}`;
+        localStorage.setItem(key, Date.now().toString());
+        setCooldownRemaining(COOLDOWN_MS);
+      } catch {}
+
       alert("Token deployment simulated! Check console for data.");
     } catch (error) {
       const errorMessage =
@@ -123,6 +159,29 @@ export default function DeployForm() {
       setIsDeploying(false);
     }
   };
+
+  // Cooldown timer: read last deploy timestamp and update remaining time
+  useEffect(() => {
+    let mounted = true;
+    const key = `soropad:lastDeploy:${publicKey ?? "anonymous"}`;
+
+    const updateRemaining = () => {
+      try {
+        const last = Number(localStorage.getItem(key) || 0);
+        const remaining = Math.max(0, last ? last + COOLDOWN_MS - Date.now() : 0);
+        if (mounted) setCooldownRemaining(remaining);
+      } catch {
+        if (mounted) setCooldownRemaining(0);
+      }
+    };
+
+    updateRemaining();
+    const id = setInterval(updateRemaining, 1000);
+    return () => {
+      mounted = false;
+      clearInterval(id);
+    };
+  }, [publicKey]);
 
   return (
     <div className="w-full max-w-xl mx-auto">

@@ -39,6 +39,43 @@ export const StepMetadata = ({ register, errors }: StepProps) => {
                 {...register("decimals", { valueAsNumber: true })}
                 error={errors.decimals?.message as string}
             />
+
+            <Input
+                label="Description (optional)"
+                placeholder="Short description for wallets/explorers"
+                {...register("description")}
+                error={errors.description?.message as string}
+            />
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Input
+                    label="Logo URL (optional)"
+                    placeholder="https://.../logo.png"
+                    {...register("logoUrl")}
+                    error={errors.logoUrl?.message as string}
+                />
+                <Input
+                    label="Website (optional)"
+                    placeholder="https://example.com"
+                    {...register("website")}
+                    error={errors.website?.message as string}
+                />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Input
+                    label="Twitter (optional)"
+                    placeholder="@project_handle or https://twitter.com/handle"
+                    {...register("twitter")}
+                    error={errors.twitter?.message as string}
+                />
+                <Input
+                    label="Discord (optional)"
+                    placeholder="Discord invite or handle"
+                    {...register("discord")}
+                    error={errors.discord?.message as string}
+                />
+            </div>
         </div>
     );
 };
