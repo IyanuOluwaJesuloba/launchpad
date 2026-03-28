@@ -48,20 +48,29 @@ describe("Stellar Network Configuration", () => {
     it("should use config.rpcUrl for testnet", async () => {
       const { simulateCall } = await import("../lib/stellar");
       
-      const mockRpcServer = {
-        simulateTransaction: jest.fn().mockResolvedValue({
-          result: {
-            retval: StellarSdk.xdr.ScVal.scvU32(7),
-          },
-        }),
+      const mockSimResult = {
+        result: {
+          retval: StellarSdk.xdr.ScVal.scvU32(7),
+        },
+        latestLedger: 12345,
+        cost: { cpuInsns: "0", memBytes: "0" },
       };
+      
+      const mockRpcServer = {
+        simulateTransaction: jest.fn().mockResolvedValue(mockSimResult),
+      };
+      
+      // Mock isSimulationSuccess to return true
+      jest.spyOn(StellarSdk.rpc.Api, 'isSimulationSuccess').mockReturnValue(true);
+      jest.spyOn(StellarSdk.rpc.Api, 'isSimulationError').mockReturnValue(false);
       
       (StellarSdk.rpc.Server as jest.Mock).mockImplementation((url: string) => {
         expect(url).toBe(mockTestnetConfig.rpcUrl);
         return mockRpcServer;
       });
 
-      await simulateCall("CTEST", "decimals", mockTestnetConfig);
+      // Use a valid contract ID (this is a properly formatted Stellar contract address)
+      await simulateCall("CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC", "decimals", mockTestnetConfig);
       
       expect(StellarSdk.rpc.Server).toHaveBeenCalledWith(mockTestnetConfig.rpcUrl);
     });
@@ -69,20 +78,29 @@ describe("Stellar Network Configuration", () => {
     it("should use config.rpcUrl for mainnet", async () => {
       const { simulateCall } = await import("../lib/stellar");
       
-      const mockRpcServer = {
-        simulateTransaction: jest.fn().mockResolvedValue({
-          result: {
-            retval: StellarSdk.xdr.ScVal.scvU32(7),
-          },
-        }),
+      const mockSimResult = {
+        result: {
+          retval: StellarSdk.xdr.ScVal.scvU32(7),
+        },
+        latestLedger: 12345,
+        cost: { cpuInsns: "0", memBytes: "0" },
       };
+      
+      const mockRpcServer = {
+        simulateTransaction: jest.fn().mockResolvedValue(mockSimResult),
+      };
+      
+      // Mock isSimulationSuccess to return true
+      jest.spyOn(StellarSdk.rpc.Api, 'isSimulationSuccess').mockReturnValue(true);
+      jest.spyOn(StellarSdk.rpc.Api, 'isSimulationError').mockReturnValue(false);
       
       (StellarSdk.rpc.Server as jest.Mock).mockImplementation((url: string) => {
         expect(url).toBe(mockMainnetConfig.rpcUrl);
         return mockRpcServer;
       });
 
-      await simulateCall("CMAIN", "decimals", mockMainnetConfig);
+      // Use a valid contract ID (this is a properly formatted Stellar contract address)
+      await simulateCall("CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC", "decimals", mockMainnetConfig);
       
       expect(StellarSdk.rpc.Server).toHaveBeenCalledWith(mockMainnetConfig.rpcUrl);
     });

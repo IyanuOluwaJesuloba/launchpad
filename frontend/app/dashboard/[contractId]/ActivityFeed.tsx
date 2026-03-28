@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
-  // ArrowUpRight,
   ArrowRight,
   Loader2,
   ArrowLeftRight,
@@ -10,11 +9,8 @@ import {
   Droplets,
 } from "lucide-react";
 import {
-  fetchAccountOperations,
-  // truncateAddress,
   type TokenActivityInfo,
 } from "@/lib/stellar";
-import { useNetwork } from "@/app/providers/NetworkProvider";
 import { ExplorerLink } from "@/components/ui/ExplorerLink";
 import { useSoroban } from "@/hooks/useSoroban";
 
@@ -25,7 +21,6 @@ export default function ActivityFeed({ accountId }: { accountId: string }) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const { networkConfig } = useNetwork();
 
   // Use refs to avoid closure stale state in intervals
   const cursorRef = useRef<string | null>(null);
@@ -72,7 +67,7 @@ export default function ActivityFeed({ accountId }: { accountId: string }) {
         if (isLoadMore) setLoadingMore(false);
       }
     },
-    [accountId, networkConfig, fetchAccountOperations],
+    [accountId, fetchAccountOperations],
   );
 
   // Initial load

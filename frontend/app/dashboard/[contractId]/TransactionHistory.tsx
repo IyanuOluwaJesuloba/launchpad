@@ -68,6 +68,19 @@ export default function TransactionHistory({
         };
     }, [history, decimals]);
 
+    // Prepare common export data
+    const prepareExportData = () => {
+        return history.map(tx => ({
+            type: tx.type.toUpperCase(),
+            from: tx.from || "-",
+            to: tx.to || "-",
+            amount: formatTokenAmount(tx.amount, decimals),
+            ledger: tx.ledger.toString(),
+            transactionId: tx.id,
+            timestamp: new Date(tx.timestamp).toISOString()
+        }));
+    };
+
     const exportPDF = () => {
         const doc = new jsPDF();
 
@@ -95,13 +108,16 @@ export default function TransactionHistory({
             tx.from ? truncateAddress(tx.from, 8) : "-",
             tx.to ? truncateAddress(tx.to, 8) : "-",
             `${formatTokenAmount(tx.amount, decimals)} ${symbol}`,
-            `L${tx.ledger}`
+            `L${tx.ledger}`,
+            new Date(tx.timestamp).toLocaleString()
         ]);
 
         autoTable(doc, {
             startY: 75,
-            head: [["Type", "From", "To", "Amount", "Ledger"]],
+            head: [["Type", "From", "To", "Amount", "Ledger", "Timestamp"]],
             body: tableData,
+            styles: { fontSize: 8 },
+            headStyles: { fillColor: [41, 128, 185] }
         });
 
         doc.save(`${symbol}_transaction_history.pdf`);
@@ -109,27 +125,30 @@ export default function TransactionHistory({
     };
 
     const exportExcel = () => {
+        const exportData = prepareExportData();
+
         const worksheetData = [
-            ["Token Transaction Report", "", "", "", ""],
-            ["Symbol", symbol, "", "", ""],
-            ["Contract ID", contractId, "", "", ""],
-            ["Generated", new Date().toLocaleString(), "", "", ""],
-            ["", "", "", "", ""],
-            ["Summary Statistics", "", "", "", ""],
-            ["Total Minted", stats.totalMinted, "", "", ""],
-            ["Total Recipients", stats.totalRecipients, "", "", ""],
-            ["", "", "", "", ""],
-            ["Type", "From", "To", "Amount", "Ledger", "Transaction ID"]
+            ["Token Transaction Report", "", "", "", "", "", ""],
+            ["Symbol", symbol, "", "", "", "", ""],
+            ["Contract ID", contractId, "", "", "", "", ""],
+            ["Generated", new Date().toLocaleString(), "", "", "", "", ""],
+            ["", "", "", "", "", "", ""],
+            ["Summary Statistics", "", "", "", "", "", ""],
+            ["Total Minted", `${stats.totalMinted} ${symbol}`, "", "", "", "", ""],
+            ["Total Recipients", stats.totalRecipients, "", "", "", "", ""],
+            ["", "", "", "", "", "", ""],
+            ["Type", "From", "To", "Amount", "Ledger", "Transaction ID", "Timestamp"]
         ];
 
-        history.forEach(tx => {
+        exportData.forEach(tx => {
             worksheetData.push([
-                tx.type.toUpperCase(),
-                tx.from || "-",
-                tx.to || "-",
-                formatTokenAmount(tx.amount, decimals),
-                tx.ledger.toString(),
-                tx.id
+                tx.type,
+                tx.from,
+                tx.to,
+                `${tx.amount} ${symbol}`,
+                tx.ledger,
+                tx.transactionId,
+                tx.timestamp
             ]);
         });
 
@@ -137,6 +156,45 @@ export default function TransactionHistory({
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, "History");
         XLSX.writeFile(workbook, `${symbol}_transaction_history.xlsx`);
+        setShowExportOptions(false);
+    };
+
+    const exportCSV = () => {
+        const exportData = prepareExportData();
+
+        // Create header rows
+        const csvRows = [
+            `Token Transaction Report: ${symbol}`,
+            `Contract ID: ${contractId}`,
+            `Generated: ${new Date().toLocaleString()}`,
+            "",
+            "Summary Statistics",
+            `Total Minted: ${stats.totalMinted} ${symbol}`,
+            `Total Recipients: ${stats.totalRecipients}`,
+            "",
+            "Type,From,To,Amount,Ledger,Transaction ID,Timestamp"
+        ];
+
+        // Add data rows
+        exportData.forEach(tx => {
+            csvRows.push(
+                `${tx.type},${tx.from},${tx.to},"${tx.amount} ${symbol}",${tx.ledger},${tx.transactionId},${tx.timestamp}`
+            );
+        });
+
+        // Create blob and download
+        const csvContent = csvRows.join("\n");
+        const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+        const link = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        
+        link.setAttribute("href", url);
+        link.setAttribute("download", `${symbol}_transaction_history.csv`);
+        link.style.visibility = "hidden";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
         setShowExportOptions(false);
     };
 
@@ -199,6 +257,13 @@ export default function TransactionHistory({
                             >
                                 <TableIcon className="h-4 w-4 text-green-400" />
                                 Export as Excel
+                            </button>
+                            <button
+                                onClick={exportCSV}
+                                className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-gray-300 transition-colors hover:bg-white/5 hover:text-white"
+                            >
+                                <FileText className="h-4 w-4 text-blue-400" />
+                                Export as CSV
                             </button>
                         </div>
                     )}
