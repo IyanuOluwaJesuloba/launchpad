@@ -1,0 +1,159 @@
+{
+  "common": {
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success",
+    "cancel": "Cancel",
+    "save": "Save",
+    "back": "Back",
+    "continue": "Continue",
+    "view": "View",
+    "close": "Close",
+    "submit": "Submit",
+    "reset": "Reset",
+    "settings": "Settings",
+    "check": "Check"
+  },
+  "navigation": {
+    "deploy": "Deploy",
+    "dashboard": "Dashboard",
+    "allowances": "Allowances",
+    "myAccount": "My Account",
+    "skipToContent": "Skip to main content"
+  },
+  "home": {
+    "badge": "Built on Stellar Soroban",
+    "title": "Launch Your Token",
+    "titleHighlight": "In Minutes",
+    "description": "SoroPad is an open-source launchpad for deploying SEP-41 compliant tokens on Soroban — with vesting schedules, admin controls, and a real-time dashboard. No smart-contract code required.",
+    "deployButton": "Deploy a Token",
+    "githubButton": "View on GitHub",
+    "features": {
+      "deploy": {
+        "icon": "🪙",
+        "title": "One-Click Deploy",
+        "description": "Fill a form, sign with Freighter, and your SEP-41 token is live on Soroban."
+      },
+      "vesting": {
+        "icon": "🔒",
+        "title": "Vesting & Controls",
+        "description": "Cliff + linear vesting per wallet. Mint, burn, and freeze with admin controls."
+      },
+      "dashboard": {
+        "icon": "📊",
+        "title": "Live Dashboard",
+        "description": "Supply metrics, holder table, vesting progress — all in real-time."
+      }
+    }
+  },
+  "deploy": {
+    "title": "Deploy Your",
+    "titleHighlight": "Soroban Token",
+    "description": "Launch a production-ready SEP-41 token in minutes. Configure your metadata, supply, and governance, then deploy to the Stellar network.",
+    "steps": {
+      "metadata": "Metadata",
+      "supply": "Supply",
+      "admin": "Admin",
+      "review": "Review"
+    },
+    "stepIndicator": "Step {current}: {name}",
+    "metadata": {
+      "title": "Token Metadata",
+      "description": "Define the basic identity of your token.",
+      "tokenName": "Token Name",
+      "tokenNamePlaceholder": "e.g. My Stellar Token",
+      "symbol": "Symbol",
+      "symbolPlaceholder": "e.g. MYTOK",
+      "decimals": "Decimals",
+      "decimalsPlaceholder": "Default is 7",
+      "descriptionLabel": "Description (optional)",
+      "descriptionPlaceholder": "Short description for wallets/explorers",
+      "logoUrl": "Logo URL (optional)",
+      "logoUrlPlaceholder": "https://.../logo.png",
+      "website": "Website (optional)",
+      "websitePlaceholder": "https://example.com",
+      "twitter": "Twitter (optional)",
+      "twitterPlaceholder": "@project_handle or https://twitter.com/handle",
+      "discord": "Discord (optional)",
+      "discordPlaceholder": "Discord invite or handle"
+    },
+    "supply": {
+      "title": "Supply Configuration",
+      "description": "Set the initial and maximum supply for your token.",
+      "initialSupply": "Initial Supply",
+      "initialSupplyPlaceholder": "e.g. 1000000",
+      "maxSupply": "Maximum Supply (Optional)",
+      "maxSupplyPlaceholder": "Leave empty for unlimited"
+    },
+    "admin": {
+      "title": "Administration",
+      "description": "Specify the administrative address for this token.",
+      "adminAddress": "Admin Address (Stellar Public Key)",
+      "adminAddressPlaceholder": "e.g. G...",
+      "warning": "The administrator has the authority to mint more tokens, change token metadata, and manage other administrative settings. Ensure you have access to this account."
+    },
+    "review": {
+      "title": "Review & Deploy",
+      "description": "Review your token configuration before deploying.",
+      "tokenDetails": "Token Details",
+      "supplyDetails": "Supply Details",
+      "adminDetails": "Admin Details",
+      "readyMessage": "Transaction is ready to sign"
+    },
+    "buttons": {
+      "deployToken": "Deploy Token"
+    },
+    "validation": {
+      "nameRequired": "Token name is required",
+      "nameTooLong": "Name too long",
+      "symbolRequired": "Symbol is required",
+      "symbolTooLong": "Symbol too long",
+      "initialSupplyMin": "Initial supply must be at least 1",
+      "maxSupplyMin": "Max supply must be at least 1",
+      "invalidPublicKey": "Invalid Stellar public key",
+      "initialExceedsMax": "Initial supply cannot exceed maximum supply"
+    }
+  },
+  "dashboard": {
+    "title": "Token Dashboard",
+    "description": "Enter a deployed token's contract ID to view supply metrics, holder distribution, and more.",
+    "searchPlaceholder": "CABC123...XYZ (contract ID)",
+    "searchLabel": "Contract ID",
+    "viewMyAccount": "View My Account",
+    "errors": {
+      "emptyContract": "Please enter a contract ID.",
+      "invalidFormat": "Invalid contract ID format. Expected a 56-character Stellar address."
+    }
+  },
+  "settings": {
+    "title": "Network Settings",
+    "description": "Configure custom Soroban RPC and Horizon URLs. Changes are saved to your browser and persist across sessions.",
+    "rpcUrl": "Soroban RPC URL",
+    "horizonUrl": "Horizon URL",
+    "resetToDefaults": "Reset to defaults",
+    "validation": {
+      "invalidUrl": "Enter a valid HTTP or HTTPS URL.",
+      "unreachable": "Could not reach this URL. Please check and try again."
+    }
+  },
+  "network": {
+    "testnet": "Testnet",
+    "mainnet": "Mainnet"
+  },
+  "wallet": {
+    "connect": "Connect Wallet",
+    "disconnect": "Disconnect",
+    "connecting": "Connecting..."
+  },
+  "footer": {
+    "builtFor": "Built for the",
+    "stellarWave": "Stellar Wave Program",
+    "license": "MIT License"
+  },
+  "accessibility": {
+    "loading": "Loading",
+    "openMenu": "Open menu",
+    "closeMenu": "Close menu",
+    "closeSettings": "Close settings"
+  }
+}

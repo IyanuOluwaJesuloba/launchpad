@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useNetwork } from "../providers/NetworkProvider";
 import { WalletButton } from "./WalletButton";
 import { SettingsModal } from "./SettingsModal";
+import { LanguageSwitcher } from "./LanguageSwitcher";
 import { Globe, ChevronDown, Menu, X } from "lucide-react";
 import { useState } from "react";
 
@@ -53,6 +54,7 @@ export function Navbar() {
 
         {/* Right side — wallet, settings & network */}
         <div className="flex items-center gap-3">
+          <LanguageSwitcher />
           <NetworkSwitcher />
 
           {/* Custom RPC / Horizon settings */}

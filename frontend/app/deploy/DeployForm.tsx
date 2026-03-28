@@ -12,7 +12,7 @@ import { StepSupply } from "./steps/StepSupply";
 import { StepAdmin } from "./steps/StepAdmin";
 import { StepReview } from "./steps/StepReview";
 import { useTransactionSimulator } from "@/hooks/useTransactionSimulator";
-import { useWallet } from "@/hooks/useWallet";
+import { useWallet } from "@/app/hooks/useWallet";
 import { savePendingMetadata } from "./utils/metadata";
 import { ArrowLeft, ArrowRight, Rocket } from "lucide-react";
 
@@ -54,7 +54,6 @@ export default function DeployForm() {
 
   const { publicKey } = useWallet();
   const COOLDOWN_MS = 60_000;
-  const [cooldownRemaining, setCooldownRemaining] = useState(0);
 
   const simulator = useTransactionSimulator();
   console.log(simulator);
@@ -142,7 +141,6 @@ export default function DeployForm() {
       try {
         const key = `soropad:lastDeploy:${publicKey ?? "anonymous"}`;
         localStorage.setItem(key, Date.now().toString());
-        setCooldownRemaining(COOLDOWN_MS);
       } catch {}
 
       alert("Token deployment simulated! Check console for data.");
@@ -160,7 +158,7 @@ export default function DeployForm() {
     }
   };
 
-  // Cooldown timer: read last deploy timestamp and update remaining time
+  // Cooldown timer: read last deploy timestamp
   useEffect(() => {
     let mounted = true;
     const key = `soropad:lastDeploy:${publicKey ?? "anonymous"}`;
@@ -169,9 +167,12 @@ export default function DeployForm() {
       try {
         const last = Number(localStorage.getItem(key) || 0);
         const remaining = Math.max(0, last ? last + COOLDOWN_MS - Date.now() : 0);
-        if (mounted) setCooldownRemaining(remaining);
+        // Could be used to display cooldown in UI
+        if (mounted && remaining > 0) {
+          console.log(`Cooldown remaining: ${Math.ceil(remaining / 1000)}s`);
+        }
       } catch {
-        if (mounted) setCooldownRemaining(0);
+        // ignore
       }
     };
 
@@ -181,7 +182,7 @@ export default function DeployForm() {
       mounted = false;
       clearInterval(id);
     };
-  }, [publicKey]);
+  }, [publicKey, COOLDOWN_MS]);
 
   return (
     <div className="w-full max-w-xl mx-auto">

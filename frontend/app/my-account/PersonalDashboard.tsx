@@ -2,18 +2,8 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
-  Wallet,
-  Loader2,
   AlertCircle,
-  RefreshCw,
-  Coins,
-  Lock,
-  Search,
-  ArrowUpRight,
-  ArrowLeftRight,
   Flame,
-  Droplets,
-  ArrowRight,
   CheckCircle2,
 } from "lucide-react";
 import { useWallet } from "../hooks/useWallet";

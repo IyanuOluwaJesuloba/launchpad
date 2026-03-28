@@ -42,7 +42,7 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
       setNetwork,
       mounted,
     }),
-    [networkConfig, network, mounted]
+    [networkConfig, network, setNetwork, mounted]
   );
 
   return (

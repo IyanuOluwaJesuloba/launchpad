@@ -32,6 +32,58 @@ jobs:
       - name: Build WASM
         run: cargo build --target wasm32-unknown-unknown --release
 
+      - name: Report WASM Size
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const wasmDir = 'target/wasm32-unknown-unknown/release';
+            
+            if (!fs.existsSync(wasmDir)) {
+              console.log('WASM target directory not found.');
+              return;
+            }
+
+            const files = fs.readdirSync(wasmDir);
+            const wasmFiles = files.filter(f => f.endsWith('.wasm'));
+            
+            let message = '### 📦 WASM Size Report\n\n| Contract | Size |\n| :--- | :--- |\n';
+            for (const file of wasmFiles) {
+              const stats = fs.statSync(path.join(wasmDir, file));
+              const size = (stats.size / 1024).toFixed(2);
+              message += `| \`${file}\` | ${size} KB |\n`;
+            }
+            
+            // Post result as PR comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            const botComment = comments.find(comment => 
+              comment.user.type === 'Bot' && comment.body.includes('WASM Size Report')
+            );
+            
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: message,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: message,
+              });
+            }
+
+
   frontend:
     name: Frontend
     runs-on: ubuntu-latest

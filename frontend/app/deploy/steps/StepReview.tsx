@@ -1,7 +1,7 @@
 import { Control, useWatch } from "react-hook-form";
 import { DeployFormData } from "../DeployForm";
-import { useWallet } from "@/hooks/useWallet";
-import { useNetwork } from "@/providers/NetworkProvider";
+import { useWallet } from "@/app/hooks/useWallet";
+import { useNetwork } from "@/app/providers/NetworkProvider";
 import * as StellarSdk from "@stellar/stellar-sdk";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
@@ -66,14 +66,14 @@ function FriendbotBanner({ threshold = 100 }: { threshold?: number }) {
     useEffect(() => {
         let cancelled = false;
         if (!publicKey) return;
-        const server = new StellarSdk.Server(networkConfig.horizonUrl);
+        const server = new StellarSdk.Horizon.Server(networkConfig.horizonUrl);
 
         (async function fetchBalance() {
             try {
                 const account = await server.accounts().accountId(publicKey).call();
-                const native = account.balances.find((b: any) => b.asset_type === "native");
+                const native = account.balances.find((b) => b.asset_type === "native");
                 if (!cancelled) setBalance(native ? Number(native.balance) : 0);
-            } catch (e) {
+            } catch {
                 // account may not exist yet
                 if (!cancelled) setBalance(0);
             }
@@ -94,13 +94,12 @@ function FriendbotBanner({ threshold = 100 }: { threshold?: number }) {
             const res = await fetch(`https://friendbot.stellar.org/?addr=${encodeURIComponent(publicKey)}`);
             if (!res.ok) throw new Error("Friendbot request failed");
             // refetch balance
-            const server = new StellarSdk.Server(networkConfig.horizonUrl);
+            const server = new StellarSdk.Horizon.Server(networkConfig.horizonUrl);
             const account = await server.accounts().accountId(publicKey).call();
-            const native = account.balances.find((b: any) => b.asset_type === "native");
+            const native = account.balances.find((b) => b.asset_type === "native");
             setBalance(native ? Number(native.balance) : 0);
         } catch (err) {
             // swallow — show simple feedback
-            // eslint-disable-next-line no-console
             console.error(err);
             alert("Friendbot funding failed. See console for details.");
         } finally {
