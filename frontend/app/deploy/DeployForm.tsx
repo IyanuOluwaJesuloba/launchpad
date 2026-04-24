@@ -14,7 +14,9 @@ import { StepReview } from "./steps/StepReview";
 import { useTransactionSimulator } from "@/hooks/useTransactionSimulator";
 import { useWallet } from "@/app/hooks/useWallet";
 import { savePendingMetadata } from "./utils/metadata";
+import { trackDeployment } from "@/lib/deployments";
 import { ArrowLeft, ArrowRight, Rocket } from "lucide-react";
+import { useNetwork } from "@/app/providers/NetworkProvider";
 
 const deploySchema = z
   .object({
@@ -56,6 +58,7 @@ export default function DeployForm() {
   const COOLDOWN_MS = 60_000;
 
   const simulator = useTransactionSimulator();
+  const { networkConfig } = useNetwork();
 
   const {
     register,
@@ -140,6 +143,16 @@ export default function DeployForm() {
       try {
         const key = `soropad:lastDeploy:${publicKey ?? "anonymous"}`;
         localStorage.setItem(key, Date.now().toString());
+
+        // Track deployment for user dashboard
+        if (publicKey) {
+          trackDeployment(publicKey, {
+            contractId: `C${Math.random().toString(36).substring(2).toUpperCase()}`, // Mocked contract ID for now
+            name: data.name,
+            symbol: data.symbol,
+            network: networkConfig.network,
+          });
+        }
       } catch {}
 
       alert("Token deployment simulated! Check console for data.");

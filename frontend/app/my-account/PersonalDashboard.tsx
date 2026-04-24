@@ -5,7 +5,18 @@ import {
   AlertCircle,
   Flame,
   CheckCircle2,
+  Rocket,
+  Plus,
+  Trash2,
+  ExternalLink,
 } from "lucide-react";
+import Link from "next/link";
+import { 
+  getTrackedDeployments, 
+  trackDeployment, 
+  removeTrackedDeployment,
+  type TrackedDeployment 
+} from "@/lib/deployments";
 import { useWallet } from "../hooks/useWallet";
 import { useSoroban } from "@/hooks/useSoroban";
 import {
@@ -35,6 +46,8 @@ export default function PersonalDashboard() {
     fetchAccountOperations,
     buildBurnTransaction,
     submitTransaction,
+    fetchTokenInfo,
+    networkConfig,
   } = useSoroban();
 
   // Balances
@@ -67,6 +80,46 @@ export default function PersonalDashboard() {
   const [burnLoading, setBurnLoading] = useState(false);
   const [burnSuccess, setBurnSuccess] = useState(false);
   const [burnError, setBurnError] = useState<string | null>(null);
+
+  // Tracked deployments
+  const [trackedTokens, setTrackedTokens] = useState<TrackedDeployment[]>([]);
+  const [importContractId, setImportContractId] = useState("");
+  const [importLoading, setImportLoading] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+
+  const loadTrackedTokens = useCallback(() => {
+    if (publicKey) {
+      setTrackedTokens(getTrackedDeployments(publicKey));
+    }
+  }, [publicKey]);
+
+  const handleImportToken = async () => {
+    if (!publicKey || !importContractId.trim()) return;
+    setImportLoading(true);
+    setImportError(null);
+    try {
+      const info = await fetchTokenInfo(importContractId.trim());
+      trackDeployment(publicKey, {
+        contractId: importContractId.trim(),
+        name: info.name,
+        symbol: info.symbol,
+        network: networkConfig.network,
+      });
+      setImportContractId("");
+      loadTrackedTokens();
+    } catch (err) {
+      setImportError("Could not find token. Check the contract ID.");
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
+  const handleRemoveToken = (contractId: string) => {
+    if (publicKey) {
+      removeTrackedDeployment(publicKey, contractId);
+      loadTrackedTokens();
+    }
+  };
 
   const handleBurn = async () => {
     if (!publicKey || !burnContractId || !burnAmount) return;
@@ -172,8 +225,9 @@ export default function PersonalDashboard() {
     if (connected && publicKey) {
       loadBalances();
       loadTransactions();
+      loadTrackedTokens();
     }
-  }, [connected, publicKey, loadBalances, loadTransactions]);
+  }, [connected, publicKey, loadBalances, loadTransactions, loadTrackedTokens]);
 
   // Refresh all
   const handleRefresh = useCallback(async () => {
@@ -280,6 +334,92 @@ export default function PersonalDashboard() {
               Burn Tokens
             </Button>
           </div>
+        </div>
+      </section>
+
+      {/* My Deployed Tokens Section */}
+      <section aria-label="My deployed tokens" className="mb-10">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-medium uppercase tracking-wider text-gray-500">
+            My Deployed Tokens
+          </h2>
+          <div className="flex gap-2">
+            <Input
+              value={importContractId}
+              onChange={(e) => setImportContractId(e.target.value)}
+              placeholder="Contract ID (C...)"
+              className="w-64 h-8 text-xs bg-void-900 border-white/10"
+            />
+            <Button
+              onClick={handleImportToken}
+              disabled={importLoading || !importContractId.trim()}
+              className="h-8 px-3 text-xs"
+              isLoading={importLoading}
+            >
+              <Plus className="w-3 h-3 mr-1" />
+              Import
+            </Button>
+          </div>
+        </div>
+
+        {importError && (
+          <p className="text-xs text-red-400 mb-4">{importError}</p>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {trackedTokens.length > 0 ? (
+            trackedTokens.map((token) => (
+              <div 
+                key={token.contractId}
+                className="glass-card p-4 flex flex-col gap-3 hover:border-stellar-400/20 transition-all group"
+              >
+                <div className="flex justify-between items-start">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-stellar-400/10 flex items-center justify-center text-stellar-400 font-bold">
+                      {token.symbol[0]}
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-white">{token.name}</h3>
+                      <p className="text-xs text-gray-400">{token.symbol}</p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => handleRemoveToken(token.contractId)}
+                    className="text-gray-500 hover:text-red-400 transition-colors"
+                    title="Remove from dashboard"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+                
+                <div className="space-y-1">
+                  <p className="text-[10px] uppercase text-gray-500 font-bold">Contract ID</p>
+                  <p className="text-xs text-gray-300 font-mono break-all">{token.contractId}</p>
+                </div>
+
+                <div className="flex justify-between items-center pt-2 border-t border-white/5">
+                  <span className="text-[10px] text-gray-500 bg-white/5 px-2 py-0.5 rounded uppercase">
+                    {token.network}
+                  </span>
+                  <Link 
+                    href={`/dashboard/${token.contractId}`}
+                    className="text-xs text-stellar-400 hover:text-stellar-300 flex items-center gap-1 group-hover:translate-x-1 transition-transform"
+                  >
+                    View Dashboard
+                    <ExternalLink className="w-3 h-3" />
+                  </Link>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="col-span-full py-12 glass-card flex flex-col items-center justify-center text-center">
+              <Rocket className="w-12 h-12 text-gray-700 mb-4" />
+              <p className="text-gray-400 font-medium">No deployed tokens found yet.</p>
+              <p className="text-xs text-gray-500 mt-1 max-w-xs">
+                Tokens you deploy through the launchpad will appear here automatically.
+              </p>
+            </div>
+          )}
         </div>
       </section>
 
