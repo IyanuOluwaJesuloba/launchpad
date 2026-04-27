@@ -34,6 +34,23 @@ export const NumericInput = React.forwardRef<HTMLInputElement, NumericInputProps
 
     const [displayValue, setDisplayValue] = useState<string>(toDisplay(value));
 
+    React.useEffect(() => {
+      setDisplayValue((prev) => {
+        const prevParsed =
+          prev === "" ? undefined : parseFloat(prev.replace(/,/g, ""));
+        const newParsed =
+          value === "" || value === undefined
+            ? undefined
+            : typeof value === "string"
+            ? parseFloat(value.replace(/,/g, ""))
+            : value;
+
+        if (prevParsed !== newParsed) {
+          return toDisplay(value);
+        }
+        return prev;
+      });
+    }, [value]);
     const handleChange = useCallback(
       (e: React.ChangeEvent<HTMLInputElement>) => {
         const raw = e.target.value;
