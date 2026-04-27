@@ -69,6 +69,8 @@ fn setup_env() -> (Env, TokenContractClient<'static>, Address, Address, Address)
         &String::from_str(&env, "FZT"),
         &INITIAL_SUPPLY,
         &None,
+        &false,
+        &false,
     );
 
     (env, client, admin, user1, user2)
@@ -95,6 +97,8 @@ fn setup_capped_env(
         &String::from_str(&env, "CFZ"),
         &initial,
         &Some(cap),
+        &false,
+        &false,
     );
 
     (env, client, admin, user)
@@ -398,6 +402,8 @@ fn test_mint_i128_overflow() {
         &String::from_str(&env, "OVF"),
         &(i128::MAX - 1),
         &None,
+        &false,
+        &false,
     );
 
     // total_supply is (i128::MAX − 1); minting 2 overflows.

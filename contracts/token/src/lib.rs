@@ -28,6 +28,9 @@ pub enum DataKey {
     /// operation (mint, burn_admin, freeze, set_admin, propose_admin) can
     /// ever succeed again — the token becomes effectively immutable.
     Locked,
+    AuthorizationRequired,
+    AuthorizationRevocable,
+    AuthorizedHolder(Address),
 }
 
 // ---------------------------------------------------------------------------
@@ -48,6 +51,12 @@ impl TokenContract {
     // ── Initialization ──────────────────────────────────────────────────
 
     /// Initialize the token with metadata and an initial supply minted to `admin`.
+    ///
+    /// `authorization_required`: when true, recipients must be explicitly authorized
+    /// by the admin before they can receive or hold tokens.
+    ///
+    /// `authorization_revocable`: when true, the admin may revoke a holder's
+    /// authorization, preventing them from receiving further transfers.
     pub fn initialize(
         env: Env,
         admin: Address,
@@ -56,6 +65,8 @@ impl TokenContract {
         symbol: String,
         initial_supply: i128,
         max_supply: Option<i128>,
+        authorization_required: bool,
+        authorization_revocable: bool,
     ) {
         // Prevent re-initialization
         if env.storage().instance().has(&DataKey::Admin) {
@@ -74,6 +85,20 @@ impl TokenContract {
         env.storage().instance().set(&DataKey::Symbol, &symbol);
         env.storage().instance().set(&DataKey::TotalSupply, &0i128);
         env.storage().instance().set(&DataKey::TotalBurned, &0i128);
+        env.storage()
+            .instance()
+            .set(&DataKey::AuthorizationRequired, &authorization_required);
+        env.storage()
+            .instance()
+            .set(&DataKey::AuthorizationRevocable, &authorization_revocable);
+
+        // When authorization_required is enabled the admin is automatically
+        // authorized so the initial supply mint succeeds.
+        if authorization_required {
+            env.storage()
+                .persistent()
+                .set(&DataKey::AuthorizedHolder(admin.clone()), &true);
+        }
 
         if initial_supply > 0 {
             Self::_mint(&env, &admin, initial_supply);
@@ -223,6 +248,68 @@ impl TokenContract {
         env.events().publish((symbol_short!("pause"),), false);
     }
 
+    /// Grant authorization to `holder`, allowing them to receive tokens when
+    /// `authorization_required` is enabled. Admin only.
+    pub fn authorize_holder(env: Env, holder: Address) {
+        Self::_require_admin(&env);
+        env.storage()
+            .persistent()
+            .set(&DataKey::AuthorizedHolder(holder.clone()), &true);
+        env.events()
+            .publish((symbol_short!("auth"),), (holder, true));
+    }
+
+    /// Revoke authorization from `holder`. Only allowed when
+    /// `authorization_revocable` is enabled. Admin only.
+    pub fn revoke_authorization(env: Env, holder: Address) {
+        Self::_require_admin(&env);
+        let revocable: bool = env
+            .storage()
+            .instance()
+            .get(&DataKey::AuthorizationRevocable)
+            .unwrap_or(false);
+        assert!(revocable, "authorization is not revocable for this token");
+        env.storage()
+            .persistent()
+            .remove(&DataKey::AuthorizedHolder(holder.clone()));
+        env.events()
+            .publish((symbol_short!("auth"),), (holder, false));
+    }
+
+    /// Returns `true` if `holder` is authorized to receive tokens.
+    /// Always returns `true` when `authorization_required` is disabled.
+    pub fn is_authorized(env: Env, holder: Address) -> bool {
+        let required: bool = env
+            .storage()
+            .instance()
+            .get(&DataKey::AuthorizationRequired)
+            .unwrap_or(false);
+        if !required {
+            return true;
+        }
+        env.storage()
+            .persistent()
+            .get(&DataKey::AuthorizedHolder(holder))
+            .unwrap_or(false)
+    }
+
+    /// Returns `true` if this token requires holders to be authorized before
+    /// receiving transfers.
+    pub fn authorization_required(env: Env) -> bool {
+        env.storage()
+            .instance()
+            .get(&DataKey::AuthorizationRequired)
+            .unwrap_or(false)
+    }
+
+    /// Returns `true` if the admin may revoke holder authorization.
+    pub fn authorization_revocable(env: Env) -> bool {
+        env.storage()
+            .instance()
+            .get(&DataKey::AuthorizationRevocable)
+            .unwrap_or(false)
+    }
+
     /// Set or update the contract URI pointing to off-chain metadata JSON.
     /// Admin only.
     pub fn update_contract_uri(env: Env, uri: String) {
@@ -252,6 +339,7 @@ impl TokenContract {
         from.require_auth();
         assert!(amount > 0, "amount must be positive");
         assert!(!Self::_is_frozen(&env, &from), "account is frozen");
+        Self::_check_authorized(&env, &to);
 
         Self::_transfer(&env, &from, &to, amount);
 
@@ -308,6 +396,7 @@ impl TokenContract {
         spender.require_auth();
         assert!(amount > 0, "amount must be positive");
         assert!(!Self::_is_frozen(&env, &from), "account is frozen");
+        Self::_check_authorized(&env, &to);
 
         let key = DataKey::Allowance(from.clone(), spender.clone());
         let allowance: i128 = env.storage().persistent().get(&key).unwrap_or(0);
@@ -429,6 +518,22 @@ impl TokenContract {
 
     // ── Internal helpers ────────────────────────────────────────────────
 
+    fn _check_authorized(env: &Env, holder: &Address) {
+        let required: bool = env
+            .storage()
+            .instance()
+            .get(&DataKey::AuthorizationRequired)
+            .unwrap_or(false);
+        if required {
+            let authorized: bool = env
+                .storage()
+                .persistent()
+                .get(&DataKey::AuthorizedHolder(holder.clone()))
+                .unwrap_or(false);
+            assert!(authorized, "recipient is not authorized to hold this token");
+        }
+    }
+
     fn _require_admin(env: &Env) {
         Self::_require_not_locked(env);
         let admin: Address = env
@@ -469,6 +574,7 @@ impl TokenContract {
     }
 
     fn _mint(env: &Env, to: &Address, amount: i128) {
+        Self::_check_authorized(env, to);
         let supply: i128 = env
             .storage()
             .instance()
@@ -581,6 +687,8 @@ mod test {
             &String::from_str(&env, "TST"),
             &1_000_000_0000000i128, // 1M tokens with 7 decimals
             &None,
+            &false,
+            &false,
         );
 
         (env, client, admin, user)
@@ -608,6 +716,8 @@ mod test {
             &String::from_str(&env, "DUP"),
             &0i128,
             &None,
+            &false,
+            &false,
         );
     }
 
@@ -1018,6 +1128,8 @@ mod test {
             &String::from_str(&env, "TST"),
             &0i128,
             &None,
+            &false,
+            &false,
         );
 
         // Remove mock — only user will auth, not admin.
@@ -1122,6 +1234,8 @@ mod test {
             &String::from_str(&env, "TST"),
             &0i128,
             &None,
+            &false,
+            &false,
         );
 
         env.mock_auths(&[soroban_sdk::testutils::MockAuth {
@@ -1154,6 +1268,8 @@ mod test {
             &String::from_str(&env, "CAP"),
             &500_0000000i128,
             &Some(1_000_0000000i128),
+            &false,
+            &false,
         );
 
         (env, client, admin, user)
@@ -1211,6 +1327,8 @@ mod test {
             &String::from_str(&env, "BAD"),
             &2_000_0000000i128,
             &Some(1_000_0000000i128),
+            &false,
+            &false,
         );
     }
 
@@ -1238,7 +1356,8 @@ mod test {
         let (_, client, _, _) = setup();
         client.contract_uri();
     }
-
+ // ── Upgrade tests ───────────────────────────────────────────────────
+ 
     #[test]
     #[should_panic(expected = "invalid wasm hash")]
     fn test_upgrade_rejects_zero_hash() {
@@ -1246,7 +1365,7 @@ mod test {
         let zero_hash = BytesN::from_array(&env, &[0; 32]);
         client.upgrade(&zero_hash);
     }
-
+ 
     #[test]
     #[should_panic]
     fn test_non_admin_cannot_upgrade() {
@@ -1255,7 +1374,7 @@ mod test {
         let client = TokenContractClient::new(&env, &contract_id);
         let admin = Address::generate(&env);
         let user = Address::generate(&env);
-
+ 
         env.mock_all_auths();
         client.initialize(
             &admin,
@@ -1264,8 +1383,10 @@ mod test {
             &String::from_str(&env, "TST"),
             &0i128,
             &None,
+            &false,
+            &false,
         );
-
+ 
         let non_zero_hash = BytesN::from_array(&env, &[1; 32]);
         env.mock_auths(&[soroban_sdk::testutils::MockAuth {
             address: &user,
@@ -1276,7 +1397,125 @@ mod test {
                 sub_invokes: &[],
             },
         }]);
-
+ 
         client.upgrade(&non_zero_hash);
+    }
+ 
+    // ── Authorization flag tests ────────────────────────────────────────
+ 
+    fn setup_with_auth_required() -> (Env, TokenContractClient<'static>, Address, Address) {
+        let env = Env::default();
+        env.mock_all_auths();
+ 
+        let contract_id = env.register_contract(None, TokenContract);
+        let client = TokenContractClient::new(&env, &contract_id);
+ 
+        let admin = Address::generate(&env);
+        let user = Address::generate(&env);
+ 
+        client.initialize(
+            &admin,
+            &7u32,
+            &String::from_str(&env, "RegToken"),
+            &String::from_str(&env, "REG"),
+            &1_000_0000000i128,
+            &None,
+            &true,
+            &true,
+        );
+ 
+        (env, client, admin, user)
+    }
+ 
+    #[test]
+    fn test_authorization_required_flag_stored() {
+        let (_, client, _, _) = setup_with_auth_required();
+        assert!(client.authorization_required());
+        assert!(client.authorization_revocable());
+    }
+ 
+    #[test]
+    fn test_authorization_flags_false_by_default() {
+        let (_, client, _, _) = setup();
+        assert!(!client.authorization_required());
+        assert!(!client.authorization_revocable());
+    }
+ 
+    #[test]
+    fn test_admin_auto_authorized_on_init() {
+        let (_, client, admin, _) = setup_with_auth_required();
+        assert!(client.is_authorized(&admin));
+    }
+ 
+    #[test]
+    fn test_unauthorized_holder_not_authorized() {
+        let (_, client, _, user) = setup_with_auth_required();
+        assert!(!client.is_authorized(&user));
+    }
+ 
+    #[test]
+    #[should_panic(expected = "recipient is not authorized to hold this token")]
+    fn test_transfer_to_unauthorized_blocked() {
+        let (_, client, admin, user) = setup_with_auth_required();
+        client.transfer(&admin, &user, &100_0000000i128);
+    }
+ 
+    #[test]
+    fn test_transfer_to_authorized_succeeds() {
+        let (_, client, admin, user) = setup_with_auth_required();
+        client.authorize_holder(&user);
+        assert!(client.is_authorized(&user));
+        client.transfer(&admin, &user, &100_0000000i128);
+        assert_eq!(client.balance(&user), 100_0000000i128);
+    }
+ 
+    #[test]
+    fn test_revoke_authorization_blocks_transfer() {
+        let (_, client, admin, user) = setup_with_auth_required();
+        client.authorize_holder(&user);
+        client.transfer(&admin, &user, &100_0000000i128);
+        client.revoke_authorization(&user);
+        assert!(!client.is_authorized(&user));
+    }
+ 
+    #[test]
+    #[should_panic(expected = "authorization is not revocable for this token")]
+    fn test_revoke_fails_when_not_revocable() {
+        let env = Env::default();
+        env.mock_all_auths();
+ 
+        let contract_id = env.register_contract(None, TokenContract);
+        let client = TokenContractClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        let user = Address::generate(&env);
+ 
+        client.initialize(
+            &admin,
+            &7u32,
+            &String::from_str(&env, "ReqOnly"),
+            &String::from_str(&env, "ROT"),
+            &0i128,
+            &None,
+            &true,
+            &false, // revocable = false
+        );
+ 
+        client.authorize_holder(&user);
+        client.revoke_authorization(&user);
+    }
+ 
+    #[test]
+    #[should_panic(expected = "recipient is not authorized to hold this token")]
+    fn test_mint_to_unauthorized_blocked() {
+        let (_, client, _, user) = setup_with_auth_required();
+        client.mint(&user, &1000i128);
+    }
+ 
+    #[test]
+    fn test_mint_to_authorized_succeeds() {
+        let (_, client, _, user) = setup_with_auth_required();
+        client.authorize_holder(&user);
+        client.mint(&user, &1000i128);
+        assert_eq!(client.balance(&user), 1000i128);
     }
 }

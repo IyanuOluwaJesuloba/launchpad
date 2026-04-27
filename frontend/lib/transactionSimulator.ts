@@ -298,6 +298,8 @@ export async function simulateTokenDeployment(
   initialSupply: bigint,
   maxSupply: bigint | null,
   config: NetworkConfig,
+  authorizationRequired: boolean = false,
+  authorizationRevocable: boolean = false,
 ): Promise<PreflightCheckResult> {
   try {
     const rpc = new StellarSdk.rpc.Server(config.rpcUrl);
@@ -324,7 +326,8 @@ export async function simulateTokenDeployment(
 
     // ── 3. Simulate initialize via Soroban RPC ─────────────────────────
     // Build the ScVal arguments that match the contract's initialize
-    // signature: (admin, decimal, name, symbol, initial_supply, max_supply)
+    // signature: (admin, decimal, name, symbol, initial_supply, max_supply,
+    //             authorization_required, authorization_revocable)
     const maxSupplyScVal =
       maxSupply !== null
         ? StellarSdk.nativeToScVal(maxSupply, { type: "i128" })
@@ -337,6 +340,8 @@ export async function simulateTokenDeployment(
       StellarSdk.nativeToScVal(symbol, { type: "string" }),
       StellarSdk.nativeToScVal(initialSupply, { type: "i128" }),
       maxSupplyScVal,
+      StellarSdk.nativeToScVal(authorizationRequired, { type: "bool" }),
+      StellarSdk.nativeToScVal(authorizationRevocable, { type: "bool" }),
     ];
 
     const account = new StellarSdk.Account(adminAddress, "0");
