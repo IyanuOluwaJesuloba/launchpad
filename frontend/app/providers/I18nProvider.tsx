@@ -14,13 +14,13 @@ export function I18nProvider({ children }: I18nProviderProps) {
   const [isClientReady, setIsClientReady] = useState(false);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+     
     setIsClientReady(true);
   }, []);
 
   useEffect(() => {
     if (contextMessages && Object.keys(contextMessages).length > 0) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+       
       setMessages(contextMessages);
     }
   }, [contextMessages]);
