@@ -27,6 +27,7 @@ export interface TokenInfo {
   circulatingSupply: string;
   admin: string;
   contractId: string;
+  maxSupply?: string | null;
 }
 
 export interface TokenHolder {
@@ -348,6 +349,17 @@ async function _fetchTokenInfo(
     // total_supply not implemented on this contract
   }
 
+  let maxSupply: string | null = null;
+  try {
+    const maxVal = await simulateCall(contractId, "max_supply", config);
+    if (maxVal && maxVal.switch() !== StellarSdk.xdr.ScValType.scvVoid()) {
+       const rawMax = decodeI128(maxVal);
+       maxSupply = formatTokenAmount(rawMax, decimals);
+    }
+  } catch {
+    // max_supply not implemented or not accessible
+  }
+
   return {
     name: decodeString(nameVal),
     symbol: decodeString(symbolVal),
@@ -356,6 +368,7 @@ async function _fetchTokenInfo(
     circulatingSupply,
     admin: adminVal ? decodeAddress(adminVal) : "N/A",
     contractId,
+    maxSupply,
   };
 }
 

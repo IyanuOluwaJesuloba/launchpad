@@ -83,9 +83,11 @@ type AdminActionData = MintData | BurnData | TransferAdminData | VestingData;
 
 interface AdminPanelProps {
     contractId: string;
+    maxSupply?: string | null;
+    totalSupply?: string;
 }
 
-export function AdminPanel({ contractId }: AdminPanelProps) {
+export function AdminPanel({ contractId, maxSupply, totalSupply }: AdminPanelProps) {
     const { signTransaction, publicKey } = useWallet();
     const { networkConfig } = useNetwork();
     const toast = useToast();
@@ -414,6 +416,7 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-12">
 
                 {/* ── Mint Form ─────────────────────────────────────── */}
+                {(!maxSupply || maxSupply === "N/A" || (totalSupply && totalSupply !== "N/A" && parseFloat(totalSupply.replace(/,/g, '')) < parseFloat(maxSupply.replace(/,/g, '')))) && (
                 <div className="glass-card p-6 flex flex-col hover:border-stellar-500/30 transition-all duration-300 group">
                     <div className="flex items-center justify-between mb-6">
                         <div className="flex items-center gap-2 text-stellar-300">
@@ -537,6 +540,7 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
                         </div>
                     )}
                 </div>
+                )}
 
                 {/* ── Burn Form ─────────────────────────────────────── */}
                 <div className="glass-card p-6 flex flex-col hover:border-red-500/30 transition-all duration-300 group">
