@@ -38,7 +38,7 @@ export const StepSupply = ({ control, errors }: StepProps) => {
                     <NumericInput
                         label="Maximum Supply (Optional)"
                         placeholder="Leave empty for unlimited"
-                        value={field.value}
+                        value={field.value ?? ""}
                         onChange={field.onChange}
                         error={errors.maxSupply?.message as string}
                     />
