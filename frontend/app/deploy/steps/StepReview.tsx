@@ -47,8 +47,8 @@ export const StepReview = ({ control }: StepProps) => {
                 <SummaryItem label="Token Name" value={formData.name} />
                 <SummaryItem label="Symbol" value={formData.symbol} />
                 <SummaryItem label="Decimals" value={formData.decimals} />
-                <SummaryItem label="Initial Supply" value={formData.initialSupply} />
-                <SummaryItem label="Max Supply" value={formData.maxSupply || "Unlimited"} />
+                <SummaryItem label="Initial Supply" value={formData.initialSupply !== undefined ? new Intl.NumberFormat('en-US').format(formData.initialSupply) : undefined} />
+                <SummaryItem label="Max Supply" value={formData.maxSupply !== undefined ? new Intl.NumberFormat('en-US').format(formData.maxSupply) : "Unlimited"} />
                 <SummaryItem label="Admin Address" value={formData.adminAddress} />
                 <FlagItem label="Authorization Required" enabled={!!formData.authorizationRequired} />
                 <FlagItem label="Authorization Revocable" enabled={!!formData.authorizationRevocable} />

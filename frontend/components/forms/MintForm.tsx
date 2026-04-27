@@ -1,11 +1,12 @@
 "use client";
 
 import React, { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { NumericInput } from "@/components/ui/NumericInput";
 import { PreflightCheckDisplay } from "@/components/ui/PreflightCheck";
 import { useTransactionSimulator } from "@/hooks/useTransactionSimulator";
 import { Rocket } from "lucide-react";
@@ -32,9 +33,6 @@ interface MintFormProps {
   onSuccess?: (txHash: string) => void;
 }
 
-/**
- * Example Mint Form with pre-flight checks
- */
 export function MintForm({ adminAddress, onSuccess }: MintFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [preflightResult, setPreflightResult] = useState<{
@@ -50,6 +48,7 @@ export function MintForm({ adminAddress, onSuccess }: MintFormProps) {
     register,
     handleSubmit,
     trigger,
+    control,
     formState: { errors, isValid },
     watch,
   } = useForm<MintFormData>({
@@ -74,7 +73,7 @@ export function MintForm({ adminAddress, onSuccess }: MintFormProps) {
       const result = await simulator.checkMint(
         formData.tokenContractId,
         formData.recipientAddress,
-        BigInt(Math.floor(parseFloat(formData.amount) * 1e7)), // Assuming 7 decimals
+        BigInt(Math.floor(parseFloat(formData.amount) * 1e7)),
         adminAddress,
       );
 
@@ -103,8 +102,6 @@ export function MintForm({ adminAddress, onSuccess }: MintFormProps) {
 
     setIsSubmitting(true);
     try {
-      // Submit transaction to Freighter
-      // await submitToFreighter(...)
       console.log("Submitting mint transaction:", data);
       onSuccess?.("0x...");
     } catch (error) {
@@ -151,17 +148,20 @@ export function MintForm({ adminAddress, onSuccess }: MintFormProps) {
         )}
       </div>
 
-      <div>
-        <label className="block text-sm font-medium text-gray-300 mb-2">
-          Amount
-        </label>
-        <Input type="text" placeholder="1000.50" {...register("amount")} />
-        {errors.amount && (
-          <p className="text-red-400 text-sm mt-1">{errors.amount.message}</p>
+      <Controller
+        name="amount"
+        control={control}
+        render={({ field }) => (
+          <NumericInput
+            label="Amount"
+            placeholder="e.g. 1,000.50"
+            value={field.value}
+            onChange={(val) => field.onChange(val?.toString() ?? "")}
+            error={errors.amount?.message as string}
+          />
         )}
-      </div>
+      />
 
-      {/* Pre-flight check status */}
       {preflightResult && (
         <div className="mt-6">
           <PreflightCheckDisplay

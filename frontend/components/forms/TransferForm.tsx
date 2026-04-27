@@ -1,11 +1,12 @@
 "use client";
 
 import React, { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { NumericInput } from "@/components/ui/NumericInput";
 import { PreflightCheckDisplay } from "@/components/ui/PreflightCheck";
 import { useTransactionSimulator } from "@/hooks/useTransactionSimulator";
 import { Send } from "lucide-react";
@@ -25,9 +26,6 @@ interface TransferFormProps {
   onSuccess?: (txHash: string) => void;
 }
 
-/**
- * Example Transfer Form with pre-flight checks
- */
 export function TransferForm({ senderAddress, onSuccess }: TransferFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [preflightResult, setPreflightResult] = useState<{
@@ -43,6 +41,7 @@ export function TransferForm({ senderAddress, onSuccess }: TransferFormProps) {
     register,
     handleSubmit,
     trigger,
+    control,
     formState: { errors, isValid },
     watch,
   } = useForm<TransferFormData>({
@@ -63,7 +62,7 @@ export function TransferForm({ senderAddress, onSuccess }: TransferFormProps) {
         formData.tokenContractId,
         senderAddress,
         formData.toAddress,
-        BigInt(Math.floor(parseFloat(formData.amount) * 1e7)), // Assuming 7 decimals
+        BigInt(Math.floor(parseFloat(formData.amount) * 1e7)),
       );
 
       setPreflightResult({
@@ -91,8 +90,6 @@ export function TransferForm({ senderAddress, onSuccess }: TransferFormProps) {
 
     setIsSubmitting(true);
     try {
-      // Submit transaction to Freighter
-      // await submitToFreighter(...)
       console.log("Submitting transfer transaction:", data);
       onSuccess?.("0x...");
     } catch (error) {
@@ -132,21 +129,20 @@ export function TransferForm({ senderAddress, onSuccess }: TransferFormProps) {
         )}
       </div>
 
-      <div>
-        <label className="block text-sm font-medium text-gray-300 mb-2">
-          Amount
-        </label>
-        <Input
-          type="text"
-          placeholder="1000.50"
-          {...register("amount")}
-        />
-        {errors.amount && (
-          <p className="text-red-400 text-sm mt-1">{errors.amount.message}</p>
+      <Controller
+        name="amount"
+        control={control}
+        render={({ field }) => (
+          <NumericInput
+            label="Amount"
+            placeholder="e.g. 1,000.50"
+            value={field.value}
+            onChange={(val) => field.onChange(val?.toString() ?? "")}
+            error={errors.amount?.message as string}
+          />
         )}
-      </div>
+      />
 
-      {/* Pre-flight check status */}
       {preflightResult && (
         <div className="mt-6">
           <PreflightCheckDisplay

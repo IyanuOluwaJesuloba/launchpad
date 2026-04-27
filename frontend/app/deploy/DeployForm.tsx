@@ -216,8 +216,8 @@ export default function DeployForm() {
             <StepMetadata register={register} errors={errors} />
           )}
           {currentStep === 2 && (
-            <StepSupply register={register} errors={errors} />
-          )}
+  <StepSupply control={control} errors={errors} />
+)}
           {currentStep === 3 && (
             <StepAdmin register={register} errors={errors} control={control} />
           )}
