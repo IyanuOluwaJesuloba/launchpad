@@ -166,6 +166,8 @@ export function useTransactionSimulator() {
       decimals: number,
       initialSupply: bigint,
       maxSupply: bigint | null,
+      authorizationRequired: boolean = false,
+      authorizationRevocable: boolean = false,
     ): Promise<PreflightCheckResult> {
       return runSimulation(() =>
         simulateTokenDeployment(
@@ -176,6 +178,8 @@ export function useTransactionSimulator() {
           initialSupply,
           maxSupply,
           networkConfig,
+          authorizationRequired,
+          authorizationRevocable,
         ),
       );
     },
