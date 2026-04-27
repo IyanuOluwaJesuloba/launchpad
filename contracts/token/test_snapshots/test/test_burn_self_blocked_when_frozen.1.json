@@ -109,7 +109,7 @@
             },
             "ext": "v0"
           },
-          4095
+          104832
         ]
       ],
       [
@@ -157,7 +157,7 @@
             },
             "ext": "v0"
           },
-          4095
+          104832
         ]
       ],
       [
@@ -238,6 +238,30 @@
                         },
                         "val": {
                           "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "AuthorizationRequired"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "bool": false
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "AuthorizationRevocable"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "bool": false
                         }
                       },
                       {
@@ -444,7 +468,13 @@
                     "lo": 10000000000000
                   }
                 },
-                "void"
+                "void",
+                {
+                  "bool": false
+                },
+                {
+                  "bool": false
+                }
               ]
             }
           }

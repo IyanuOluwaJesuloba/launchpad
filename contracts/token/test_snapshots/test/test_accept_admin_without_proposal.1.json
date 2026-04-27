@@ -104,6 +104,30 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "AuthorizationRequired"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "bool": false
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "AuthorizationRevocable"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "bool": false
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "Decimals"
                             }
                           ]
@@ -238,7 +262,13 @@
                     "lo": 10000000000000
                   }
                 },
-                "void"
+                "void",
+                {
+                  "bool": false
+                },
+                {
+                  "bool": false
+                }
               ]
             }
           }
@@ -350,7 +380,7 @@
               }
             ],
             "data": {
-              "string": "caught panic 'no pending admin' from contract function 'Symbol(obj#59)'"
+              "string": "caught panic 'no pending admin' from contract function 'Symbol(obj#71)'"
             }
           }
         }

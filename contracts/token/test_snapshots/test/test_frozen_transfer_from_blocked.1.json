@@ -329,6 +329,30 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "AuthorizationRequired"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "bool": false
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "AuthorizationRevocable"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "bool": false
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "Decimals"
                             }
                           ]
@@ -562,7 +586,13 @@
                     "lo": 10000000000000
                   }
                 },
-                "void"
+                "void",
+                {
+                  "bool": false
+                },
+                {
+                  "bool": false
+                }
               ]
             }
           }
@@ -945,7 +975,7 @@
             "data": {
               "vec": [
                 {
-                  "string": "caught panic 'account is frozen' from contract function 'Symbol(obj#161)'"
+                  "string": "caught panic 'account is frozen' from contract function 'Symbol(obj#195)'"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"

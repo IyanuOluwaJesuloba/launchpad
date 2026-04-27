@@ -204,6 +204,30 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "AuthorizationRequired"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "bool": false
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "AuthorizationRevocable"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "bool": false
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "Decimals"
                             }
                           ]
@@ -416,7 +440,13 @@
                     "lo": 10000000000000
                   }
                 },
-                "void"
+                "void",
+                {
+                  "bool": false
+                },
+                {
+                  "bool": false
+                }
               ]
             }
           }
@@ -705,7 +735,7 @@
             "data": {
               "vec": [
                 {
-                  "string": "caught panic 'contract is paused' from contract function 'Symbol(obj#111)'"
+                  "string": "caught panic 'contract is paused' from contract function 'Symbol(obj#133)'"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"

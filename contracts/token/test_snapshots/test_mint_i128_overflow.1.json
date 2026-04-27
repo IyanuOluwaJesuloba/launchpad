@@ -104,6 +104,30 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "AuthorizationRequired"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "bool": false
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "AuthorizationRevocable"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "bool": false
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "Decimals"
                             }
                           ]
@@ -238,7 +262,13 @@
                     "lo": 18446744073709551614
                   }
                 },
-                "void"
+                "void",
+                {
+                  "bool": false
+                },
+                {
+                  "bool": false
+                }
               ]
             }
           }

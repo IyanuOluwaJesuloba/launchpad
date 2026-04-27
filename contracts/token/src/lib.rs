@@ -1356,8 +1356,8 @@ mod test {
         let (_, client, _, _) = setup();
         client.contract_uri();
     }
- // ── Upgrade tests ───────────────────────────────────────────────────
- 
+    // ── Upgrade tests ───────────────────────────────────────────────────
+
     #[test]
     #[should_panic(expected = "invalid wasm hash")]
     fn test_upgrade_rejects_zero_hash() {
@@ -1365,7 +1365,7 @@ mod test {
         let zero_hash = BytesN::from_array(&env, &[0; 32]);
         client.upgrade(&zero_hash);
     }
- 
+
     #[test]
     #[should_panic]
     fn test_non_admin_cannot_upgrade() {
@@ -1374,7 +1374,7 @@ mod test {
         let client = TokenContractClient::new(&env, &contract_id);
         let admin = Address::generate(&env);
         let user = Address::generate(&env);
- 
+
         env.mock_all_auths();
         client.initialize(
             &admin,
@@ -1386,7 +1386,7 @@ mod test {
             &false,
             &false,
         );
- 
+
         let non_zero_hash = BytesN::from_array(&env, &[1; 32]);
         env.mock_auths(&[soroban_sdk::testutils::MockAuth {
             address: &user,
@@ -1397,22 +1397,22 @@ mod test {
                 sub_invokes: &[],
             },
         }]);
- 
+
         client.upgrade(&non_zero_hash);
     }
- 
+
     // ── Authorization flag tests ────────────────────────────────────────
- 
+
     fn setup_with_auth_required() -> (Env, TokenContractClient<'static>, Address, Address) {
         let env = Env::default();
         env.mock_all_auths();
- 
+
         let contract_id = env.register_contract(None, TokenContract);
         let client = TokenContractClient::new(&env, &contract_id);
- 
+
         let admin = Address::generate(&env);
         let user = Address::generate(&env);
- 
+
         client.initialize(
             &admin,
             &7u32,
@@ -1423,43 +1423,43 @@ mod test {
             &true,
             &true,
         );
- 
+
         (env, client, admin, user)
     }
- 
+
     #[test]
     fn test_authorization_required_flag_stored() {
         let (_, client, _, _) = setup_with_auth_required();
         assert!(client.authorization_required());
         assert!(client.authorization_revocable());
     }
- 
+
     #[test]
     fn test_authorization_flags_false_by_default() {
         let (_, client, _, _) = setup();
         assert!(!client.authorization_required());
         assert!(!client.authorization_revocable());
     }
- 
+
     #[test]
     fn test_admin_auto_authorized_on_init() {
         let (_, client, admin, _) = setup_with_auth_required();
         assert!(client.is_authorized(&admin));
     }
- 
+
     #[test]
     fn test_unauthorized_holder_not_authorized() {
         let (_, client, _, user) = setup_with_auth_required();
         assert!(!client.is_authorized(&user));
     }
- 
+
     #[test]
     #[should_panic(expected = "recipient is not authorized to hold this token")]
     fn test_transfer_to_unauthorized_blocked() {
         let (_, client, admin, user) = setup_with_auth_required();
         client.transfer(&admin, &user, &100_0000000i128);
     }
- 
+
     #[test]
     fn test_transfer_to_authorized_succeeds() {
         let (_, client, admin, user) = setup_with_auth_required();
@@ -1468,7 +1468,7 @@ mod test {
         client.transfer(&admin, &user, &100_0000000i128);
         assert_eq!(client.balance(&user), 100_0000000i128);
     }
- 
+
     #[test]
     fn test_revoke_authorization_blocks_transfer() {
         let (_, client, admin, user) = setup_with_auth_required();
@@ -1477,18 +1477,18 @@ mod test {
         client.revoke_authorization(&user);
         assert!(!client.is_authorized(&user));
     }
- 
+
     #[test]
     #[should_panic(expected = "authorization is not revocable for this token")]
     fn test_revoke_fails_when_not_revocable() {
         let env = Env::default();
         env.mock_all_auths();
- 
+
         let contract_id = env.register_contract(None, TokenContract);
         let client = TokenContractClient::new(&env, &contract_id);
         let admin = Address::generate(&env);
         let user = Address::generate(&env);
- 
+
         client.initialize(
             &admin,
             &7u32,
@@ -1499,18 +1499,18 @@ mod test {
             &true,
             &false, // revocable = false
         );
- 
+
         client.authorize_holder(&user);
         client.revoke_authorization(&user);
     }
- 
+
     #[test]
     #[should_panic(expected = "recipient is not authorized to hold this token")]
     fn test_mint_to_unauthorized_blocked() {
         let (_, client, _, user) = setup_with_auth_required();
         client.mint(&user, &1000i128);
     }
- 
+
     #[test]
     fn test_mint_to_authorized_succeeds() {
         let (_, client, _, user) = setup_with_auth_required();

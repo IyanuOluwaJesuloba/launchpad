@@ -159,7 +159,7 @@
             },
             "ext": "v0"
           },
-          4095
+          104832
         ]
       ],
       [
@@ -207,7 +207,7 @@
             },
             "ext": "v0"
           },
-          4095
+          104832
         ]
       ],
       [
@@ -233,6 +233,30 @@
                       "wasm": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
                     },
                     "storage": [
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "AuthorizationRequired"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "bool": false
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "AuthorizationRevocable"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "bool": false
+                        }
+                      },
                       {
                         "key": {
                           "vec": [
@@ -515,7 +539,13 @@
                     "lo": 10000000000000
                   }
                 },
-                "void"
+                "void",
+                {
+                  "bool": false
+                },
+                {
+                  "bool": false
+                }
               ]
             }
           }
