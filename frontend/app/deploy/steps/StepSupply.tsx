@@ -31,15 +31,18 @@ export const StepSupply = ({ control, errors }: StepProps) => {
                 )}
             />
 
-            <Input
-                label="Maximum Supply (Optional)"
-                type="number"
-                placeholder="Leave empty for unlimited"
-                {...register("maxSupply", {
-                    setValueAs: (v: unknown) =>
-                        v === "" || v === null || v === undefined ? undefined : Number(v),
-                })}
-                error={errors.maxSupply?.message as string}
+            <Controller
+                name="maxSupply"
+                control={control}
+                render={({ field }) => (
+                    <NumericInput
+                        label="Maximum Supply (Optional)"
+                        placeholder="Leave empty for unlimited"
+                        value={field.value ?? ""}
+                        onChange={field.onChange}
+                        error={errors.maxSupply?.message as string}
+                    />
+                )}
             />
         </div>
     );
