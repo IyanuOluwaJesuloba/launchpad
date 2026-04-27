@@ -1,5 +1,6 @@
 import * as StellarSdk from "@stellar/stellar-sdk";
 import { type NetworkConfig } from "../types/network";
+import { wrapRpcCall } from "./soroban";
 
 // ---------------------------------------------------------------------------
 // Config — defaults to Stellar Testnet, overridable via localStorage
@@ -114,32 +115,37 @@ export async function simulateCall(
   config: NetworkConfig,
   args: StellarSdk.xdr.ScVal[] = [],
 ): Promise<StellarSdk.xdr.ScVal> {
-  const contract = new StellarSdk.Contract(contractId);
-  const account = new StellarSdk.Account(
-    "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-    "0",
+  return wrapRpcCall(
+    async () => {
+      const rpc = new StellarSdk.rpc.Server(config.rpcUrl);
+      const contract = new StellarSdk.Contract(contractId);
+      const account = new StellarSdk.Account(
+        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+        "0",
+      );
+
+      const tx = new StellarSdk.TransactionBuilder(account, {
+        fee: "100",
+        networkPassphrase: config.passphrase,
+      })
+        .addOperation(contract.call(method, ...args))
+        .setTimeout(30)
+        .build();
+
+      const sim = await rpc.simulateTransaction(tx);
+
+      if (StellarSdk.rpc.Api.isSimulationError(sim)) {
+        throw new Error(`Soroban simulation error (${method}): ${sim.error}`);
+      }
+
+      if (!StellarSdk.rpc.Api.isSimulationSuccess(sim) || !sim.result) {
+        throw new Error(`Soroban simulation failed for ${method}`);
+      }
+
+      return sim.result.retval;
+    },
+    { operation: `simulate ${method}`, silent: true },
   );
-
-  const tx = new StellarSdk.TransactionBuilder(account, {
-    fee: "100",
-    networkPassphrase: config.passphrase,
-  })
-    .addOperation(contract.call(method, ...args))
-    .setTimeout(30)
-    .build();
-
-  const rpc = new StellarSdk.rpc.Server(config.rpcUrl);
-  const sim = await rpc.simulateTransaction(tx);
-
-  if (StellarSdk.rpc.Api.isSimulationError(sim)) {
-    throw new Error(`Soroban simulation error (${method}): ${sim.error}`);
-  }
-
-  if (!StellarSdk.rpc.Api.isSimulationSuccess(sim) || !sim.result) {
-    throw new Error(`Soroban simulation failed for ${method}`);
-  }
-
-  return sim.result.retval;
 }
 
 // ---------------------------------------------------------------------------
@@ -399,6 +405,15 @@ export async function fetchTokenInfo(
   contractId: string,
   config: NetworkConfig,
 ): Promise<TokenInfo> {
+  return wrapRpcCall(() => _fetchTokenInfo(contractId, config), {
+    operation: "Fetch token info",
+  });
+}
+
+async function _fetchTokenInfo(
+  contractId: string,
+  config: NetworkConfig,
+): Promise<TokenInfo> {
   const [nameVal, symbolVal, decimalsVal, adminVal] = await Promise.all([
     simulateCall(contractId, "name", config),
     simulateCall(contractId, "symbol", config),
@@ -462,49 +477,84 @@ export async function fetchTokenBalance(
 export async function fetchTopHolders(
   contractId: string,
   config: NetworkConfig,
-  _symbol?: string,
-  _issuer?: string,
+  symbolHint?: string,
+  issuerHint?: string,
   limit = 10,
 ): Promise<TokenHolder[]> {
   try {
     const horizon = new StellarSdk.Horizon.Server(config.horizonUrl);
+    const symbol =
+      symbolHint ??
+      decodeString(await simulateCall(contractId, "symbol", config));
+    const decimals =
+      decodeU32(await simulateCall(contractId, "decimals", config));
 
-    if (_symbol && _issuer) {
-      const asset = new StellarSdk.Asset(_symbol, _issuer);
-      const { records } = await horizon
-        .accounts()
-        .forAsset(asset)
-        .limit(limit)
-        .order("desc")
-        .call();
+    let issuer = issuerHint;
+    if (!issuer) {
+      // Resolve issuer for this asset code from Horizon stats.
+      // If multiple issuers exist for same code, prefer one with largest supply.
+      const assetsPage = await horizon.assets().forCode(symbol).limit(200).call();
+      if (assetsPage.records.length === 0) {
+        return [];
+      }
+      const getAssetAmount = (record: unknown): string => {
+        const raw = (record as { amount?: unknown }).amount;
+        return typeof raw === "string" ? raw : "0";
+      };
+      issuer = assetsPage.records
+        .slice()
+        .sort(
+          (a, b) =>
+            parseFloat(getAssetAmount(b)) - parseFloat(getAssetAmount(a)),
+        )[0]
+        .asset_issuer;
+    }
 
-      let total = BigInt(0);
-      const parsed = records.map((acc) => {
+    const asset = new StellarSdk.Asset(symbol, issuer);
+    const [holdersPage, assetStats] = await Promise.all([
+      horizon.accounts().forAsset(asset).limit(limit).order("desc").call(),
+      horizon.assets().forCode(symbol).forIssuer(issuer).limit(1).call(),
+    ]);
+
+    const toRawAmount = (amount: string, tokenDecimals: number): bigint => {
+      const [wholePart, fracPart = ""] = amount.split(".");
+      const normalizedFrac = fracPart
+        .padEnd(tokenDecimals, "0")
+        .slice(0, tokenDecimals);
+      return BigInt(`${wholePart}${normalizedFrac}`);
+    };
+
+    const totalSupplyRaw =
+      assetStats.records.length > 0
+        ? toRawAmount(
+            (assetStats.records[0] as { amount?: string }).amount ?? "0",
+            decimals,
+          )
+        : BigInt(0);
+
+    const parsed = holdersPage.records
+      .map((acc) => {
         const bal = acc.balances.find(
           (b) =>
             "asset_code" in b &&
-            b.asset_code === _symbol &&
+            b.asset_code === symbol &&
             "asset_issuer" in b &&
-            b.asset_issuer === _issuer,
+            b.asset_issuer === issuer,
         );
-        const raw = BigInt(
-          Math.round(parseFloat(bal ? bal.balance : "0") * 1e7),
-        );
-        total += raw;
-        return { address: acc.account_id, rawBalance: raw };
-      });
+        const rawBalance = toRawAmount(bal ? bal.balance : "0", decimals);
+        return { address: acc.account_id, rawBalance };
+      })
+      .filter((row) => row.rawBalance > BigInt(0))
+      .sort((a, b) => (a.rawBalance > b.rawBalance ? -1 : a.rawBalance < b.rawBalance ? 1 : 0));
 
-      return parsed.map(({ address, rawBalance }) => ({
-        address,
-        balance: (Number(rawBalance) / 1e7).toFixed(7),
-        sharePercent:
-          total > BigInt(0)
-            ? Number((rawBalance * BigInt(10000)) / total) / 100
-            : 0,
-      }));
-    }
-
-    return [];
+    return parsed.map(({ address, rawBalance }) => ({
+      address,
+      balance: (Number(rawBalance) / 10 ** decimals).toFixed(decimals),
+      sharePercent:
+        totalSupplyRaw > BigInt(0)
+          ? Number((rawBalance * BigInt(10000)) / totalSupplyRaw) / 100
+          : 0,
+    }));
   } catch {
     return [];
   }
@@ -529,9 +579,14 @@ function getStructField(
 export async function fetchCurrentLedger(
   config: NetworkConfig,
 ): Promise<number> {
-  const rpc = new StellarSdk.rpc.Server(config.rpcUrl);
-  const result = await rpc.getLatestLedger();
-  return result.sequence;
+  return wrapRpcCall(
+    async () => {
+      const rpc = new StellarSdk.rpc.Server(config.rpcUrl);
+      const result = await rpc.getLatestLedger();
+      return result.sequence;
+    },
+    { operation: "Fetch latest ledger" },
+  );
 }
 
 /**
@@ -1242,40 +1297,45 @@ export async function submitTransaction(
   signedXdr: string,
   config: NetworkConfig,
 ): Promise<string> {
-  const tx = StellarSdk.TransactionBuilder.fromXDR(
-    signedXdr,
-    config.passphrase,
+  return wrapRpcCall(
+    async () => {
+      const tx = StellarSdk.TransactionBuilder.fromXDR(
+        signedXdr,
+        config.passphrase,
+      );
+
+      const rpc = new StellarSdk.rpc.Server(config.rpcUrl);
+      const result = await rpc.sendTransaction(tx as StellarSdk.Transaction);
+
+      if (result.status === "ERROR") {
+        throw new Error(
+          `Transaction failed: ${result.errorResult?.toXDR("base64")}`,
+        );
+      }
+
+      // Poll for transaction result
+      let getResponse = await rpc.getTransaction(result.hash);
+      let attempts = 0;
+      const maxAttempts = 30;
+
+      while (getResponse.status === "NOT_FOUND" && attempts < maxAttempts) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        getResponse = await rpc.getTransaction(result.hash);
+        attempts++;
+      }
+
+      if (getResponse.status === "NOT_FOUND") {
+        throw new Error("Transaction not found after polling");
+      }
+
+      if (getResponse.status === "FAILED") {
+        throw new Error(
+          `Transaction failed: ${getResponse.resultXdr?.toXDR("base64")}`,
+        );
+      }
+
+      return result.hash;
+    },
+    { operation: "Submit transaction" },
   );
-
-  const rpc = new StellarSdk.rpc.Server(config.rpcUrl);
-  const result = await rpc.sendTransaction(tx as StellarSdk.Transaction);
-
-  if (result.status === "ERROR") {
-    throw new Error(
-      `Transaction failed: ${result.errorResult?.toXDR("base64")}`,
-    );
-  }
-
-  // Poll for transaction result
-  let getResponse = await rpc.getTransaction(result.hash);
-  let attempts = 0;
-  const maxAttempts = 30;
-
-  while (getResponse.status === "NOT_FOUND" && attempts < maxAttempts) {
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    getResponse = await rpc.getTransaction(result.hash);
-    attempts++;
-  }
-
-  if (getResponse.status === "NOT_FOUND") {
-    throw new Error("Transaction not found after polling");
-  }
-
-  if (getResponse.status === "FAILED") {
-    throw new Error(
-      `Transaction failed: ${getResponse.resultXdr?.toXDR("base64")}`,
-    );
-  }
-
-  return result.hash;
 }

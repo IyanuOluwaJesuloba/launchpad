@@ -1,14 +1,14 @@
 import "@testing-library/jest-dom";
-import { TextEncoder, TextDecoder } from "util";
 
+// jsdom in Jest does not expose TextEncoder/TextDecoder; @stellar/stellar-sdk
+// requires them at module load time.
+import { TextEncoder, TextDecoder } from "util";
 if (typeof global.TextEncoder === "undefined") {
   global.TextEncoder = TextEncoder;
 }
-
 if (typeof global.TextDecoder === "undefined") {
   global.TextDecoder = TextDecoder;
 }
-
 
 // Mock window.matchMedia
 Object.defineProperty(window, "matchMedia", {

@@ -1,0 +1,159 @@
+{
+  "common": {
+    "loading": "Chargement...",
+    "error": "Erreur",
+    "success": "Succès",
+    "cancel": "Annuler",
+    "save": "Enregistrer",
+    "back": "Retour",
+    "continue": "Continuer",
+    "view": "Voir",
+    "close": "Fermer",
+    "submit": "Soumettre",
+    "reset": "Réinitialiser",
+    "settings": "Paramètres",
+    "check": "Vérifier"
+  },
+  "navigation": {
+    "deploy": "Déployer",
+    "dashboard": "Tableau de bord",
+    "allowances": "Allocations",
+    "myAccount": "Mon Compte",
+    "skipToContent": "Aller au contenu principal"
+  },
+  "home": {
+    "badge": "Construit sur Stellar Soroban",
+    "title": "Lancez Votre Token",
+    "titleHighlight": "En Minutes",
+    "description": "SoroPad est un launchpad open-source pour déployer des tokens conformes SEP-41 sur Soroban — avec des calendriers de vesting, des contrôles administrateur et un tableau de bord en temps réel. Pas de code smart-contract requis.",
+    "deployButton": "Déployer un Token",
+    "githubButton": "Voir sur GitHub",
+    "features": {
+      "deploy": {
+        "icon": "🪙",
+        "title": "Déploiement en Un Clic",
+        "description": "Remplissez un formulaire, signez avec Freighter, et votre token SEP-41 est actif sur Soroban."
+      },
+      "vesting": {
+        "icon": "🔒",
+        "title": "Vesting et Contrôles",
+        "description": "Cliff + vesting linéaire par wallet. Mint, burn et gel avec contrôles administrateur."
+      },
+      "dashboard": {
+        "icon": "📊",
+        "title": "Tableau de Bord en Direct",
+        "description": "Métriques d'approvisionnement, tableau des holders, progression du vesting — tout en temps réel."
+      }
+    }
+  },
+  "deploy": {
+    "title": "Déployez Votre",
+    "titleHighlight": "Token Soroban",
+    "description": "Lancez un token production-readyConforme SEP-41 en minutes. Configurez vos métadonnées, approvisionnement et gouvernance, puis déployez sur le réseau Stellar.",
+    "steps": {
+      "metadata": "Métadonnées",
+      "supply": "Approvisionnement",
+      "admin": "Administrateur",
+      "review": "Révision"
+    },
+    "stepIndicator": "Étape {current}: {name}",
+    "metadata": {
+      "title": "Métadonnées du Token",
+      "description": "Définissez l'identité básica de votre token.",
+      "tokenName": "Nom du Token",
+      "tokenNamePlaceholder": "ex. Mon Stellar Token",
+      "symbol": "Symbole",
+      "symbolPlaceholder": "ex. MYTOK",
+      "decimals": "Décimales",
+      "decimalsPlaceholder": "La valeur par défaut est 7",
+      "descriptionLabel": "Description (optionnel)",
+      "descriptionPlaceholder": "Courte description pour les wallets/explorers",
+      "logoUrl": "URL du Logo (optionnel)",
+      "logoUrlPlaceholder": "https://.../logo.png",
+      "website": "Site Web (optionnel)",
+      "websitePlaceholder": "https://example.com",
+      "twitter": "Twitter (optionnel)",
+      "twitterPlaceholder": "@handle_du_projet ou https://twitter.com/handle",
+      "discord": "Discord (optionnel)",
+      "discordPlaceholder": "Invitation Discord ou handle"
+    },
+    "supply": {
+      "title": "Configuration de l'Approvisionnement",
+      "description": "Définissez l'approvisionnement initial et maximum pour votre token.",
+      "initialSupply": "Approvisionnement Initial",
+      "initialSupplyPlaceholder": "ex. 1000000",
+      "maxSupply": "Approvisionnement Maximum (Optionnel)",
+      "maxSupplyPlaceholder": "Laisser vide pour illimité"
+    },
+    "admin": {
+      "title": "Administration",
+      "description": "Spécifiez l'adresse administrative pour ce token.",
+      "adminAddress": "Adresse de l'Administrateur (Clé Publique Stellar)",
+      "adminAddressPlaceholder": "ex. G...",
+      "warning": "L'administrateur a l'autorité pour minter plus de tokens, modifier les métadonnées du token et gérer d'autres paramètres administratifs. Assurez-vous d'avoir accès à ce compte."
+    },
+    "review": {
+      "title": "Révision et Déploiement",
+      "description": "Vérifiez votre configuration de token avant le déploiement.",
+      "tokenDetails": "Détails du Token",
+      "supplyDetails": "Détails de l'Approvisionnement",
+      "adminDetails": "Détails de l'Administrateur",
+      "readyMessage": "La transaction est prête à être signée"
+    },
+    "buttons": {
+      "deployToken": "Déployer le Token"
+    },
+    "validation": {
+      "nameRequired": "Le nom du token est requis",
+      "nameTooLong": "Nom trop long",
+      "symbolRequired": "Le symbole est requis",
+      "symbolTooLong": "Symbole trop long",
+      "initialSupplyMin": "L'approvisionnement initial doit être au moins 1",
+      "maxSupplyMin": "L'approvisionnement maximum doit être au moins 1",
+      "invalidPublicKey": "Clé publique Stellar invalide",
+      "initialExceedsMax": "L'approvisionnement initial ne peut pas dépasser l'approvisionnement maximum"
+    }
+  },
+  "dashboard": {
+    "title": "Tableau de Bord du Token",
+    "description": "Entrez l'ID de contrat d'un token déployé pour voir les métriques d'approvisionnement, la distribution des holders, et plus.",
+    "searchPlaceholder": "CABC123...XYZ (ID de contrat)",
+    "searchLabel": "ID de Contrat",
+    "viewMyAccount": "Voir Mon Compte",
+    "errors": {
+      "emptyContract": "Veuillez entrer un ID de contrat.",
+      "invalidFormat": "Format d'ID de contrat invalide. Une adresse Stellar de 56 caractères est attendue."
+    }
+  },
+  "settings": {
+    "title": "Paramètres du Réseau",
+    "description": "Configurez des URLs personnalisées Soroban RPC et Horizon. Les modifications sont sauvegardées dans votre navigateur et persistent entre les sessions.",
+    "rpcUrl": "URL Soroban RPC",
+    "horizonUrl": "URL Horizon",
+    "resetToDefaults": "Réinitialiser aux valeurs par défaut",
+    "validation": {
+      "invalidUrl": "Entrez une URL HTTP ou HTTPS valide.",
+      "unreachable": "Impossible d'atteindre cette URL. Veuillez vérifier et réessayer."
+    }
+  },
+  "network": {
+    "testnet": "Testnet",
+    "mainnet": "Mainnet"
+  },
+  "wallet": {
+    "connect": "Connecter le Wallet",
+    "disconnect": "Déconnecter",
+    "connecting": "Connexion..."
+  },
+  "footer": {
+    "builtFor": "Construit pour le",
+    "stellarWave": "Programme Stellar Wave",
+    "license": "Licence MIT"
+  },
+  "accessibility": {
+    "loading": "Chargement",
+    "openMenu": "Ouvrir le menu",
+    "closeMenu": "Fermer le menu",
+    "closeSettings": "Fermer les paramètres"
+  }
+}

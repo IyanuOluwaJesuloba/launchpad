@@ -146,7 +146,7 @@
             },
             "ext": "v0"
           },
-          4095
+          104832
         ]
       ],
       [
@@ -194,7 +194,7 @@
             },
             "ext": "v0"
           },
-          4095
+          104832
         ]
       ],
       [
@@ -242,7 +242,7 @@
             },
             "ext": "v0"
           },
-          4095
+          104832
         ]
       ],
       [
@@ -945,7 +945,7 @@
             "data": {
               "vec": [
                 {
-                  "string": "caught panic 'account is frozen' from contract function 'Symbol(obj#155)'"
+                  "string": "caught panic 'account is frozen' from contract function 'Symbol(obj#161)'"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"

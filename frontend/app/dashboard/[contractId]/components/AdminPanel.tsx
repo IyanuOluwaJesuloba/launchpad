@@ -1,21 +1,24 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useWallet } from "../../../hooks/useWallet";
+import { useNetwork } from "../../../providers/NetworkProvider";
+import { useToast } from "../../../providers/ToastProvider";
 import {
     addressToScVal,
     i128ToScVal,
-    nativeToScVal
+    nativeToScVal,
+    wrapRpcCall,
 } from "@/lib/soroban";
 import {
     parseBatchMintData,
     parseBatchMintFile,
-    BatchMintEntry
+    BatchMintEntry,
 } from "@/lib/batch";
 import {
     TransactionBuilder,
@@ -23,7 +26,7 @@ import {
     rpc,
     Contract,
     Address,
-    xdr
+    xdr,
 } from "@stellar/stellar-sdk";
 import {
     Coins,
@@ -32,7 +35,8 @@ import {
     ShieldAlert,
     CheckCircle2,
     ExternalLink,
-    Clock
+    Clock,
+    Lock,
 } from "lucide-react";
 import { VestingCurveChart } from "@/components/VestingCurveChart";
 
@@ -40,6 +44,9 @@ import { VestingCurveChart } from "@/components/VestingCurveChart";
 
 const RPC_URL = "https://rpc-futurenet.stellar.org";
 const NETWORK_PASSPHRASE = Networks.FUTURENET;
+
+/** String the admin must type to confirm permanent revocation. */
+const REVOKE_CONFIRM_PHRASE = "REVOKE";
 
 /* ── Validation Schemas ────────────────────────────────────────── */
 
@@ -80,10 +87,15 @@ interface AdminPanelProps {
 
 export function AdminPanel({ contractId }: AdminPanelProps) {
     const { signTransaction, publicKey } = useWallet();
+    const { networkConfig } = useNetwork();
+    const toast = useToast();
     const [loading, setLoading] = useState<string | null>(null);
     const [lastTxHash, setLastTxHash] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
     const [showTransferConfirm, setShowTransferConfirm] = useState(false);
+    const [locked, setLocked] = useState(false);
+    const [showRevokeConfirm, setShowRevokeConfirm] = useState(false);
+    const [revokePhrase, setRevokePhrase] = useState("");
 
     const [mintMode, setMintMode] = useState<"single" | "batch">("single");
     const [batchData, setBatchData] = useState("");
@@ -100,6 +112,45 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
     const [watchedCliff, watchedDuration] = vestingForm.watch(["cliffDays", "durationDays"]);
     const chartCliffDays = Math.max(0, Number(watchedCliff) || 0);
     const chartDurationDays = Math.max(0, Number(watchedDuration) || 0);
+
+    /* ── Lock state: simulate is_locked() so we can disable admin ops. ── */
+    const refreshLocked = useCallback(async () => {
+        try {
+            const value = await wrapRpcCall(
+                async () => {
+                    const server = new rpc.Server(networkConfig.rpcUrl);
+                    const contract = new Contract(contractId);
+                    // Use a deterministic dummy account for read-only simulation.
+                    const dummy = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
+                    const account = new (
+                        await import("@stellar/stellar-sdk")
+                    ).Account(dummy, "0");
+                    const tx = new TransactionBuilder(account, {
+                        fee: "100",
+                        networkPassphrase: networkConfig.passphrase,
+                    })
+                        .addOperation(contract.call("is_locked"))
+                        .setTimeout(30)
+                        .build();
+                    const sim = await server.simulateTransaction(tx);
+                    if (rpc.Api.isSimulationError(sim)) {
+                        // Older deployments without is_locked just stay unlocked.
+                        return false;
+                    }
+                    if (!rpc.Api.isSimulationSuccess(sim) || !sim.result) return false;
+                    return Boolean(sim.result.retval.b());
+                },
+                { operation: "Check lock state", silent: true },
+            );
+            setLocked(value);
+        } catch {
+            // Best effort — if it fails we leave the panel enabled.
+        }
+    }, [contractId, networkConfig.rpcUrl, networkConfig.passphrase]);
+
+    useEffect(() => {
+        refreshLocked();
+    }, [refreshLocked]);
 
     const handleBatchMint = async (entries: BatchMintEntry[]) => {
         if (!publicKey) return;
@@ -125,7 +176,6 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
                 .setTimeout(30)
                 .build();
 
-            // 3. Sign and Submit
             const xdrEncoded = tx.toXDR();
             console.log(`Signing batch mint tx for ${contractId} with ${entries.length} recipients`);
 
@@ -141,7 +191,11 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
         } catch (err) {
             const error = err as Error;
             console.error(`batch-mint failed:`, error);
-            alert(`Batch Mint failed: ${error.message}`);
+            toast.show({
+                title: "Batch mint failed",
+                message: error.message,
+                variant: "error",
+            });
         } finally {
             setLoading(null);
         }
@@ -232,11 +286,94 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
         } catch (err) {
             const error = err as Error;
             console.error(`${action} failed:`, error);
-            alert(`${action} failed: ${error.message}`);
+            toast.show({
+                title: `${action.charAt(0).toUpperCase() + action.slice(1)} failed`,
+                message: error.message,
+                variant: "error",
+            });
         } finally {
             setLoading(null);
         }
     };
+
+    /* ── Revoke admin / lock token ─────────────────────────────────── */
+    const handleRevokeAdmin = async () => {
+        if (!publicKey) return;
+        if (revokePhrase.trim() !== REVOKE_CONFIRM_PHRASE) return;
+
+        setLoading("revoke");
+        try {
+            const txHash = await wrapRpcCall(
+                async () => {
+                    const server = new rpc.Server(networkConfig.rpcUrl);
+                    const account = await server.getAccount(publicKey);
+                    const contract = new Contract(contractId);
+
+                    const built = new TransactionBuilder(account, {
+                        fee: "1000",
+                        networkPassphrase: networkConfig.passphrase,
+                    })
+                        .addOperation(contract.call("revoke_admin"))
+                        .setTimeout(60)
+                        .build();
+
+                    const sim = await server.simulateTransaction(built);
+                    if (rpc.Api.isSimulationError(sim)) {
+                        throw new Error(`Simulation failed: ${sim.error}`);
+                    }
+                    const prepared = rpc.assembleTransaction(built, sim).build();
+
+                    const signedXdr = await signTransaction(prepared.toXDR(), {
+                        networkPassphrase: networkConfig.passphrase,
+                    });
+                    const signedTx = TransactionBuilder.fromXDR(
+                        signedXdr,
+                        networkConfig.passphrase,
+                    );
+                    const send = await server.sendTransaction(
+                        signedTx as Parameters<typeof server.sendTransaction>[0],
+                    );
+                    if (send.status === "ERROR") {
+                        throw new Error(
+                            `Submit failed: ${send.errorResult?.toXDR("base64") ?? "unknown"}`,
+                        );
+                    }
+
+                    let response = await server.getTransaction(send.hash);
+                    let attempts = 0;
+                    while (response.status === "NOT_FOUND" && attempts < 30) {
+                        await new Promise((r) => setTimeout(r, 1000));
+                        response = await server.getTransaction(send.hash);
+                        attempts += 1;
+                    }
+                    if (response.status === "FAILED") {
+                        throw new Error("Revoke transaction failed on-chain");
+                    }
+                    return send.hash;
+                },
+                { operation: "Revoke admin", toastTitle: "Revoke failed" },
+            );
+
+            setLastTxHash(txHash);
+            setSuccess("revoke");
+            setLocked(true);
+            setShowRevokeConfirm(false);
+            setRevokePhrase("");
+            toast.show({
+                title: "Admin revoked",
+                message:
+                    "The token contract is now locked. Admin operations can no longer be performed.",
+                variant: "success",
+                duration: 8_000,
+            });
+        } catch {
+            // Toast already surfaced via wrapRpcCall.
+        } finally {
+            setLoading(null);
+        }
+    };
+
+    const adminDisabled = !!loading || locked;
 
     return (
         <section className="mt-12 w-full max-w-4xl animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -256,6 +393,23 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
                     </a>
                 )}
             </div>
+
+            {locked && (
+                <div className="mb-6 flex items-start gap-3 rounded-xl border border-yellow-500/30 bg-yellow-500/5 p-4">
+                    <Lock className="mt-0.5 h-5 w-5 shrink-0 text-yellow-400" />
+                    <div className="text-sm">
+                        <p className="font-semibold text-yellow-200">
+                            Admin permanently revoked
+                        </p>
+                        <p className="mt-1 text-xs leading-relaxed text-yellow-100/80">
+                            This token contract is now immutable. Mint, burn,
+                            freeze, and admin-transfer operations are
+                            permanently disabled. Holders can still transfer
+                            and self-burn their tokens.
+                        </p>
+                    </div>
+                </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-12">
 
@@ -305,7 +459,7 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
                                 type="submit"
                                 className="w-full mt-4 shadow-lg shadow-stellar-500/20"
                                 isLoading={loading === "mint"}
-                                disabled={!!loading}
+                                disabled={adminDisabled}
                             >
                                 {success === "mint" ? (
                                     <span className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4" /> Success</span>
@@ -373,7 +527,7 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
                                 type="button"
                                 className="w-full mt-2 shadow-lg shadow-stellar-500/20"
                                 isLoading={loading === "batch-mint"}
-                                disabled={!!loading || parsedEntries.length === 0 || batchErrors.length > 0}
+                                disabled={adminDisabled || parsedEntries.length === 0 || batchErrors.length > 0}
                                 onClick={() => handleBatchMint(parsedEntries)}
                             >
                                 {success === "batch-mint" ? (
@@ -413,7 +567,7 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
                             variant="secondary"
                             className="w-full mt-4 border-red-500/20 hover:border-red-500/40 text-red-400"
                             isLoading={loading === "burn"}
-                            disabled={!!loading}
+                            disabled={adminDisabled}
                         >
                             {success === "burn" ? (
                                 <span className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4" /> Success</span>
@@ -481,7 +635,7 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
                             type="submit"
                             className="w-full mt-4 bg-stellar-500 hover:bg-stellar-600 text-white shadow-lg shadow-stellar-500/20"
                             isLoading={loading === "vesting"}
-                            disabled={!!loading}
+                            disabled={adminDisabled}
                         >
                             {success === "vesting" ? (
                                 <span className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4" /> Success</span>
@@ -515,7 +669,7 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
                             <Button
                                 type="submit"
                                 className="w-full mt-4 bg-white/5 border-white/10 hover:bg-white/10 text-white"
-                                disabled={!!loading}
+                                disabled={adminDisabled}
                             >
                                 Transfer Control
                             </Button>
@@ -533,7 +687,7 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
                                         variant="secondary"
                                         className="flex-1 text-xs py-2 h-9"
                                         onClick={() => setShowTransferConfirm(false)}
-                                        disabled={!!loading}
+                                        disabled={adminDisabled}
                                     >
                                         Cancel
                                     </Button>
@@ -549,6 +703,97 @@ export function AdminPanel({ contractId }: AdminPanelProps) {
                             </div>
                         )}
                     </form>
+                </div>
+
+                {/* ── Revoke Admin / Lock Token ────────────────────────── */}
+                <div className="glass-card p-6 flex flex-col hover:border-red-500/30 transition-all duration-300 group md:col-span-2">
+                    <div className="flex items-center gap-2 mb-4 text-red-400">
+                        <div className="p-2 bg-red-500/10 rounded-lg group-hover:scale-110 transition-transform">
+                            <Lock className="w-5 h-5" />
+                        </div>
+                        <div>
+                            <h3 className="font-bold text-lg">Revoke Admin / Lock Token</h3>
+                            <p className="text-xs text-gray-400 mt-0.5">
+                                Permanently make this token immutable. Removes
+                                admin and disables minting, burning, freezing,
+                                and admin transfer forever.
+                            </p>
+                        </div>
+                    </div>
+
+                    {locked ? (
+                        <div className="flex items-center gap-2 rounded-lg border border-yellow-500/20 bg-yellow-500/5 px-4 py-3 text-sm text-yellow-200">
+                            <Lock className="h-4 w-4" />
+                            Admin already revoked — token is locked.
+                        </div>
+                    ) : !showRevokeConfirm ? (
+                        <Button
+                            type="button"
+                            variant="secondary"
+                            className="w-full mt-2 border-red-500/20 text-red-400 hover:border-red-500/40"
+                            disabled={!!loading}
+                            onClick={() => setShowRevokeConfirm(true)}
+                        >
+                            Begin revocation
+                        </Button>
+                    ) : (
+                        <div className="space-y-3 pt-2 animate-in fade-in slide-in-from-top-2 duration-300 bg-red-950/20 p-4 rounded-xl border border-red-500/20">
+                            <p className="text-[10px] text-red-400 font-bold uppercase tracking-widest text-center">
+                                Irreversible Action
+                            </p>
+                            <p className="text-xs text-stellar-200 text-center leading-relaxed">
+                                Once revoked, no one — including you — can ever
+                                mint, burn, freeze, or transfer admin again.
+                                Type{" "}
+                                <span className="font-mono font-bold text-red-300">
+                                    {REVOKE_CONFIRM_PHRASE}
+                                </span>{" "}
+                                to confirm.
+                            </p>
+                            <Input
+                                placeholder={REVOKE_CONFIRM_PHRASE}
+                                value={revokePhrase}
+                                onChange={(e) => setRevokePhrase(e.target.value)}
+                                aria-label="Revoke confirmation phrase"
+                                disabled={loading === "revoke"}
+                                className="bg-white/5 border-white/10"
+                            />
+                            <div className="flex gap-2">
+                                <Button
+                                    type="button"
+                                    variant="secondary"
+                                    className="flex-1 text-xs py-2 h-9"
+                                    onClick={() => {
+                                        setShowRevokeConfirm(false);
+                                        setRevokePhrase("");
+                                    }}
+                                    disabled={loading === "revoke"}
+                                >
+                                    Cancel
+                                </Button>
+                                <Button
+                                    type="button"
+                                    className="flex-1 text-xs py-2 h-9 bg-red-600 hover:bg-red-700 border-none shadow-lg shadow-red-600/20"
+                                    onClick={handleRevokeAdmin}
+                                    isLoading={loading === "revoke"}
+                                    disabled={
+                                        revokePhrase.trim() !==
+                                            REVOKE_CONFIRM_PHRASE ||
+                                        loading === "revoke"
+                                    }
+                                >
+                                    {success === "revoke" ? (
+                                        <span className="flex items-center gap-2">
+                                            <CheckCircle2 className="w-4 h-4" />{" "}
+                                            Revoked
+                                        </span>
+                                    ) : (
+                                        "Revoke permanently"
+                                    )}
+                                </Button>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
             </div>

@@ -99,7 +99,7 @@
             },
             "ext": "v0"
           },
-          4095
+          104832
         ]
       ],
       [
@@ -580,7 +580,7 @@
             "data": {
               "vec": [
                 {
-                  "string": "caught panic 'insufficient allowance' from contract function 'Symbol(obj#73)'"
+                  "string": "caught panic 'insufficient allowance' from contract function 'Symbol(obj#75)'"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"

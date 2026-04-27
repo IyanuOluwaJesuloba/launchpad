@@ -1,0 +1,159 @@
+{
+  "common": {
+    "loading": "加载中...",
+    "error": "错误",
+    "success": "成功",
+    "cancel": "取消",
+    "save": "保存",
+    "back": "返回",
+    "continue": "继续",
+    "view": "查看",
+    "close": "关闭",
+    "submit": "提交",
+    "reset": "重置",
+    "settings": "设置",
+    "check": "检查"
+  },
+  "navigation": {
+    "deploy": "部署",
+    "dashboard": "仪表板",
+    "allowances": "配额",
+    "myAccount": "我的账户",
+    "skipToContent": "跳转到主要内容"
+  },
+  "home": {
+    "badge": "构建于 Stellar Soroban",
+    "title": "部署您的代币",
+    "titleHighlight": "数分钟完成",
+    "description": "SoroPad 是一个开源的部署平台，用于在 Soroban 上部署符合 SEP-41 标准的代币 — 包含归属计划、管理员控制和实时仪表板。无需智能合约代码。",
+    "deployButton": "部署代币",
+    "githubButton": "在 GitHub 上查看",
+    "features": {
+      "deploy": {
+        "icon": "🪙",
+        "title": "一键部署",
+        "description": "填写表单，使用 Freighter 签名，您的 SEP-41 代币即可在 Soroban 上线。"
+      },
+      "vesting": {
+        "icon": "🔒",
+        "title": "归属与控制",
+        "description": "按钱包设置悬崖期 + 线性归属。管理员可铸造、销毁和冻结。"
+      },
+      "dashboard": {
+        "icon": "📊",
+        "title": "实时仪表板",
+        "description": "供应量指标、持有人表、归属进度 — 全部实时更新。"
+      }
+    }
+  },
+  "deploy": {
+    "title": "部署您的",
+    "titleHighlight": "Soroban 代币",
+    "description": "在数分钟内启动生产就绪的 SEP-41 代币。配置您的元数据、供应量和管理权，然后部署到 Stellar 网络。",
+    "steps": {
+      "metadata": "元数据",
+      "supply": "供应量",
+      "admin": "管理员",
+      "review": "审核"
+    },
+    "stepIndicator": "步骤 {current}: {name}",
+    "metadata": {
+      "title": "代币元数据",
+      "description": "定义您的代币基本身份。",
+      "tokenName": "代币名称",
+      "tokenNamePlaceholder": "例如：我的 Stellar 代币",
+      "symbol": "符号",
+      "symbolPlaceholder": "例如：MYTOK",
+      "decimals": "小数位数",
+      "decimalsPlaceholder": "默认值为 7",
+      "descriptionLabel": "描述（可选）",
+      "descriptionPlaceholder": "钱包/浏览器简短描述",
+      "logoUrl": "Logo 网址（可选）",
+      "logoUrlPlaceholder": "https://.../logo.png",
+      "website": "网站（可选）",
+      "websitePlaceholder": "https://example.com",
+      "twitter": "Twitter（可选）",
+      "twitterPlaceholder": "@项目名或 https://twitter.com/用户名",
+      "discord": "Discord（可选）",
+      "discordPlaceholder": "Discord 邀请或用户名"
+    },
+    "supply": {
+      "title": "供应量配置",
+      "description": "设置您的代币初始和最大供应量。",
+      "initialSupply": "初始供应量",
+      "initialSupplyPlaceholder": "例如：1000000",
+      "maxSupply": "最大供应量（可选）",
+      "maxSupplyPlaceholder": "留空以设置为无限"
+    },
+    "admin": {
+      "title": "管理权限",
+      "description": "指定此代币的管理员地址。",
+      "adminAddress": "管理员地址（Stellar 公钥）",
+      "adminAddressPlaceholder": "例如：G...",
+      "warning": "管理员有权铸造更多代币、更改代币元数据和管理其他设置。请确保您有权访问此账户。"
+    },
+    "review": {
+      "title": "审核并部署",
+      "description": "在部署前审核您的代币配置。",
+      "tokenDetails": "代币详情",
+      "supplyDetails": "供应量详情",
+      "adminDetails": "管理员详情",
+      "readyMessage": "交易已准备好签名"
+    },
+    "buttons": {
+      "deployToken": "部署代币"
+    },
+    "validation": {
+      "nameRequired": "代币名称为必填项",
+      "nameTooLong": "名称过长",
+      "symbolRequired": "符号为必填项",
+      "symbolTooLong": "符号过长",
+      "initialSupplyMin": "初始供应量至少为 1",
+      "maxSupplyMin": "最大供应量至少为 1",
+      "invalidPublicKey": "无效的 Stellar 公钥",
+      "initialExceedsMax": "初始供应量不能超过最大供应量"
+    }
+  },
+  "dashboard": {
+    "title": "代币仪表板",
+    "description": "输入已部署代币的合约 ID 以查看供应量指标、持有人分布等。",
+    "searchPlaceholder": "CABC123...XYZ（合约 ID）",
+    "searchLabel": "合约 ID",
+    "viewMyAccount": "查看我的账户",
+    "errors": {
+      "emptyContract": "请输入合约 ID。",
+      "invalidFormat": "无效的合约 ID 格式。应为 56 位 Stellar 地址。"
+    }
+  },
+  "settings": {
+    "title": "网络设置",
+    "description": "配置自定义 Soroban RPC 和 Horizon 网址。更改将保存到您的浏览器并在会话间保留。",
+    "rpcUrl": "Soroban RPC 网址",
+    "horizonUrl": "Horizon 网址",
+    "resetToDefaults": "重置为默认值",
+    "validation": {
+      "invalidUrl": "输入有效的 HTTP 或 HTTPS 网址。",
+      "unreachable": "无法访问此网址。请检查后重试。"
+    }
+  },
+  "network": {
+    "testnet": "测试网",
+    "mainnet": "主网"
+  },
+  "wallet": {
+    "connect": "连接钱包",
+    "disconnect": "断开连接",
+    "connecting": "连接中..."
+  },
+  "footer": {
+    "builtFor": "为",
+    "stellarWave": "Stellar Wave 计划构建",
+    "license": "MIT 许可证"
+  },
+  "accessibility": {
+    "loading": "加载中",
+    "openMenu": "打开菜单",
+    "closeMenu": "关闭菜单",
+    "closeSettings": "关闭设置"
+  }
+}

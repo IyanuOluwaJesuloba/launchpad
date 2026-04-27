@@ -2,42 +2,28 @@
 
 import { useState } from "react";
 import { Globe, ChevronDown } from "lucide-react";
+import { useLocale } from "../providers/LocaleProvider";
 
-const SUPPORTED_LOCALES = [{ code: "en", label: "English" }] as const;
+const SUPPORTED_LOCALES = [
+  { code: "en" as const, label: "English" },
+  { code: "es" as const, label: "Español" },
+  { code: "fr" as const, label: "Français" },
+  { code: "zh" as const, label: "中文" },
+];
 
 type LocaleCode = (typeof SUPPORTED_LOCALES)[number]["code"];
 
-const STORAGE_KEY = "soropad:locale";
-
-function getInitialLocale(): LocaleCode {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY) as LocaleCode | null;
-    if (stored && SUPPORTED_LOCALES.some((l) => l.code === stored)) {
-      return stored;
-    }
-  } catch {
-    // localStorage unavailable
-  }
-  return "en";
-}
-
 export function LanguageSwitcher() {
-  const [currentLocale, setCurrentLocale] =
-    useState<LocaleCode>(getInitialLocale);
+  const { locale, setLocale } = useLocale();
   const [isOpen, setIsOpen] = useState(false);
 
   const handleSelect = (code: LocaleCode) => {
-    setCurrentLocale(code);
+    setLocale(code);
     setIsOpen(false);
-    try {
-      localStorage.setItem(STORAGE_KEY, code);
-    } catch {
-      // localStorage unavailable
-    }
   };
 
   const currentLabel =
-    SUPPORTED_LOCALES.find((l) => l.code === currentLocale)?.label ?? "English";
+    SUPPORTED_LOCALES.find((l) => l.code === locale)?.label ?? "English";
 
   return (
     <div className="relative">
@@ -65,20 +51,20 @@ export function LanguageSwitcher() {
             aria-label="Available languages"
             className="absolute left-0 mt-2 w-36 origin-top-left rounded-xl border border-white/10 bg-void-800 p-1 shadow-2xl z-50"
           >
-            {SUPPORTED_LOCALES.map((locale) => (
-              <li key={locale.code}>
+            {SUPPORTED_LOCALES.map((l) => (
+              <li key={l.code}>
                 <button
                   type="button"
                   role="option"
-                  aria-selected={locale.code === currentLocale}
-                  onClick={() => handleSelect(locale.code)}
+                  aria-selected={l.code === locale}
+                  onClick={() => handleSelect(l.code)}
                   className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
-                    locale.code === currentLocale
+                    l.code === locale
                       ? "bg-stellar-500/10 text-stellar-400"
                       : "text-gray-400 hover:bg-white/5 hover:text-white"
                   }`}
                 >
-                  {locale.label}
+                  {l.label}
                 </button>
               </li>
             ))}
