@@ -49,6 +49,7 @@ export interface TokenInfo {
   circulatingSupply: string;
   admin: string;
   contractId: string;
+  maxSupply?: string | null;
 }
 
 export interface TokenHolder {
@@ -399,6 +400,23 @@ export async function fetchTokenInfo(
   contractId: string,
   config: NetworkConfig,
 ): Promise<TokenInfo> {
+  // --- MOCK FOR LOCAL UI TESTING ---
+  if (contractId === "TEST") {
+    return {
+      name: "Test Token",
+      symbol: "TEST",
+      decimals: 7,
+      totalSupply: "1,000,000",
+      circulatingSupply: "1,000,000",
+      // Hardcode to the connected wallet for testing or 'N/A'.
+      // We will just let the TokenDashboard consider the user as admin.
+      admin: "G_TEST_ADMIN",
+      contractId: "TEST",
+      maxSupply: null, // Allow minting
+    };
+  }
+  // ---------------------------------
+
   const [nameVal, symbolVal, decimalsVal, adminVal] = await Promise.all([
     simulateCall(contractId, "name", config),
     simulateCall(contractId, "symbol", config),
@@ -419,6 +437,17 @@ export async function fetchTokenInfo(
     // total_supply not implemented on this contract
   }
 
+  let maxSupply: string | null = null;
+  try {
+    const maxVal = await simulateCall(contractId, "max_supply", config);
+    if (maxVal && maxVal.switch() !== StellarSdk.xdr.ScValType.scvVoid()) {
+       const rawMax = decodeI128(maxVal);
+       maxSupply = formatTokenAmount(rawMax, decimals);
+    }
+  } catch {
+    // max_supply not implemented or not accessible
+  }
+
   return {
     name: decodeString(nameVal),
     symbol: decodeString(symbolVal),
@@ -427,6 +456,7 @@ export async function fetchTokenInfo(
     circulatingSupply,
     admin: adminVal ? decodeAddress(adminVal) : "N/A",
     contractId,
+    maxSupply,
   };
 }
 

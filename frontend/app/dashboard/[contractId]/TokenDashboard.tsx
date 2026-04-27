@@ -16,6 +16,8 @@ import { ExplorerLink } from "@/components/ui/ExplorerLink";
 import ActivityFeed from "./ActivityFeed";
 import { TransferPanel } from "./components/TransferPanel";
 import { UserPanel } from "./components/UserPanel";
+import { AdminPanel } from "./components/AdminPanel";
+import { useWallet } from "@/app/hooks/useWallet";
 import { HoldersTable, exportHoldersCsv } from "./components/HoldersTable";
 import { InfoCard } from "./components/InfoCard";
 import { ErrorState, LoadingState } from "./components/DashboardUi";
@@ -31,6 +33,7 @@ export default function TokenDashboard({ contractId }: { contractId: string }) {
     useState<SupplyBreakdown | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { publicKey } = useWallet();
   const {
     fetchTokenInfo,
     fetchTopHolders,
@@ -119,6 +122,15 @@ export default function TokenDashboard({ contractId }: { contractId: string }) {
 
       {/* User Actions Panel (Burn Tokens) */}
       <UserPanel contractId={contractId} decimals={tokenInfo.decimals} />
+
+      {/* Admin Panel (Mint, Burn, Vesting, Transfer Admin) */}
+      {publicKey && tokenInfo.admin === publicKey && (
+        <AdminPanel
+          contractId={contractId}
+          maxSupply={tokenInfo.maxSupply}
+          totalSupply={tokenInfo.totalSupply}
+        />
+      )}
 
       {/* Supply Breakdown Chart */}
       {supplyBreakdown && (
