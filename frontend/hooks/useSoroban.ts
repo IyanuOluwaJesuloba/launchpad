@@ -63,7 +63,8 @@ export function useSoroban() {
   );
 
   const fetchTransactionHistory = useCallback(
-    (contractId: string) => stellar.fetchTransactionHistory(contractId, networkConfig),
+    (contractId: string, options?: { cursor?: string; limit?: number }) =>
+      stellar.fetchTransactionHistory(contractId, networkConfig, options),
     [networkConfig],
   );
 

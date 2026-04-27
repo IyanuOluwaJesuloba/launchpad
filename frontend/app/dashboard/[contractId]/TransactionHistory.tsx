@@ -24,7 +24,9 @@ export default function TransactionHistory({
     symbol
 }: TransactionHistoryProps) {
     const [history, setHistory] = useState<TransactionItem[]>([]);
+    const [nextCursor, setNextCursor] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
+    const [loadingMore, setLoadingMore] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [showExportOptions, setShowExportOptions] = useState(false);
 
@@ -34,16 +36,30 @@ export default function TransactionHistory({
         setLoading(true);
         setError(null);
         try {
-            const data = await fetchTransactionHistory(contractId);
-            setHistory(data);
+            const { items, nextCursor: cursor } = await fetchTransactionHistory(contractId);
+            setHistory(items);
+            setNextCursor(cursor);
         } catch (err) {
             console.error("Failed to load history:", err);
-            // Don't set error if we have some data, but here it's full load
             setError("Failed to load transaction history. Please try again.");
         } finally {
             setLoading(false);
         }
     }, [contractId, fetchTransactionHistory]);
+
+    const loadMore = useCallback(async () => {
+        if (!nextCursor || loadingMore) return;
+        setLoadingMore(true);
+        try {
+            const { items, nextCursor: cursor } = await fetchTransactionHistory(contractId, { cursor: nextCursor });
+            setHistory((prev) => [...prev, ...items]);
+            setNextCursor(cursor);
+        } catch (err) {
+            console.error("Failed to load more history:", err);
+        } finally {
+            setLoadingMore(false);
+        }
+    }, [contractId, fetchTransactionHistory, nextCursor, loadingMore]);
 
     useEffect(() => {
         loadHistory();
@@ -287,7 +303,7 @@ export default function TransactionHistory({
                     <div className="overflow-x-auto">
                         <table className="w-full text-sm">
                             <thead>
-                                <tr className="border-b border-white/5 bg-white/[0.02]">
+                                <tr className="border-b border-white/5 bg-white/2">
                                     <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Type</th>
                                     <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">From / To</th>
                                     <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Amount</th>
@@ -296,7 +312,7 @@ export default function TransactionHistory({
                             </thead>
                             <tbody className="divide-y divide-white/5">
                                 {history.map((tx) => (
-                                    <tr key={tx.id} className="transition-colors hover:bg-white/[0.02]">
+                                    <tr key={tx.id} className="transition-colors hover:bg-white/2">
                                         <td className="px-4 py-4">
                                             <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${tx.type === "mint" ? "bg-green-500/10 text-green-400" :
                                                 tx.type === "burn" ? "bg-red-500/10 text-red-400" :
@@ -340,6 +356,21 @@ export default function TransactionHistory({
                             </tbody>
                         </table>
                     </div>
+                </div>
+            )}
+
+            {nextCursor && (
+                <div className="flex justify-center">
+                    <button
+                        onClick={loadMore}
+                        disabled={loadingMore}
+                        className="btn-secondary flex items-center gap-2 px-6 py-2 text-sm disabled:opacity-50"
+                    >
+                        {loadingMore ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : null}
+                        {loadingMore ? "Loading..." : "Load More"}
+                    </button>
                 </div>
             )}
         </div>

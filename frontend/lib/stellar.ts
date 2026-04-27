@@ -1,5 +1,6 @@
 import * as StellarSdk from "@stellar/stellar-sdk";
 import { type NetworkConfig } from "../types/network";
+import { fetchIndexedEvents, getMercuryConfig } from "./indexer";
 import { wrapRpcCall } from "./soroban";
 
 // ---------------------------------------------------------------------------
@@ -7,36 +8,12 @@ import { wrapRpcCall } from "./soroban";
 // ---------------------------------------------------------------------------
 const DEFAULT_HORIZON_URL =
   process.env.NEXT_PUBLIC_HORIZON_URL ?? "https://horizon-testnet.stellar.org";
-const DEFAULT_MERCURY_BASE_URL_TESTNET =
-  process.env.NEXT_PUBLIC_MERCURY_TESTNET_URL ??
-  "https://testnet.mercurydata.app/rest";
-const DEFAULT_MERCURY_BASE_URL_MAINNET =
-  process.env.NEXT_PUBLIC_MERCURY_MAINNET_URL ??
-  "https://mainnet.mercurydata.app/rest";
-const DEFAULT_MERCURY_AUTH_TOKEN =
-  process.env.NEXT_PUBLIC_MERCURY_AUTH_TOKEN ?? "";
 
 function getHorizonUrl(): string {
   if (typeof window !== "undefined") {
     return localStorage.getItem("soropad_horizon_url") || DEFAULT_HORIZON_URL;
   }
   return DEFAULT_HORIZON_URL;
-}
-
-function getMercuryConfig(config: NetworkConfig): { baseUrl: string; token: string } | null {
-  const explicitBaseUrl = process.env.NEXT_PUBLIC_MERCURY_BASE_URL;
-  const baseUrl =
-    explicitBaseUrl ??
-    (config.network === "mainnet"
-      ? DEFAULT_MERCURY_BASE_URL_MAINNET
-      : DEFAULT_MERCURY_BASE_URL_TESTNET);
-  const token = DEFAULT_MERCURY_AUTH_TOKEN;
-
-  if (!token) {
-    return null;
-  }
-
-  return { baseUrl, token };
 }
 
 // ---------------------------------------------------------------------------
@@ -146,72 +123,6 @@ export async function simulateCall(
     },
     { operation: `simulate ${method}`, silent: true },
   );
-}
-
-// ---------------------------------------------------------------------------
-// Mercury indexer helpers
-// ---------------------------------------------------------------------------
-
-async function fetchMercuryJson(
-  config: NetworkConfig,
-  path: string,
-  params?: Record<string, string | number | undefined>,
-): Promise<unknown> {
-  const mercury = getMercuryConfig(config);
-  if (!mercury) {
-    throw new Error(
-      "Mercury indexer not configured. Set NEXT_PUBLIC_MERCURY_AUTH_TOKEN.",
-    );
-  }
-
-  const searchParams = new URLSearchParams();
-  if (params) {
-    Object.entries(params).forEach(([key, value]) => {
-      if (value === undefined) return;
-      searchParams.set(key, String(value));
-    });
-  }
-
-  const query = searchParams.toString();
-  const url = `${mercury.baseUrl}${path}${query ? `?${query}` : ""}`;
-
-  const response = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${mercury.token}`,
-      Accept: "application/json",
-    },
-  });
-
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(
-      `Mercury request failed (${response.status}): ${body || response.statusText}`,
-    );
-  }
-
-  return response.json();
-}
-
-async function fetchMercuryEventsByContract(
-  contractId: string,
-  config: NetworkConfig,
-  params: { topics?: string[]; limit?: number; offset?: number },
-): Promise<unknown[]> {
-  const json = await fetchMercuryJson(
-    config,
-    `/events/by-contract/${contractId}`,
-    {
-      topics: params.topics?.join(","),
-      limit: params.limit,
-      offset: params.offset,
-    },
-  );
-
-  const payload = json as { events?: unknown; data?: unknown };
-  if (Array.isArray(payload?.events)) return payload.events;
-  if (Array.isArray(payload?.data)) return payload.data;
-  if (Array.isArray(json)) return json;
-  return [];
 }
 
 function encodeTopicSymbol(symbol: string): string {
@@ -327,23 +238,23 @@ export async function fetchApprovedSpendersFromEvents(params: {
   const topicApprove = encodeTopicSymbol("approve");
   const pageSize = 200;
 
+  let cursor: string | undefined;
   for (let page = 0; page < maxPages; page++) {
-    const events = await fetchMercuryEventsByContract(contractId, config, {
+    const { events, nextCursor } = await fetchIndexedEvents(contractId, config, {
       topics: [topicApprove],
       limit: pageSize,
-      offset: page * pageSize,
+      cursor,
     });
 
     if (events.length === 0) break;
 
     for (const event of events) {
       try {
-        const topics = readEventTopics(event);
-        if (topics.length < 3) continue;
+        if (event.topic.length < 3) continue;
 
-        const topic0 = toScVal(topics[0]);
-        const topic1 = toScVal(topics[1]);
-        const topic2 = toScVal(topics[2]);
+        const topic0 = toScVal(event.topic[0]);
+        const topic1 = toScVal(event.topic[1]);
+        const topic2 = toScVal(event.topic[2]);
         if (!topic0 || !topic1 || !topic2) continue;
 
         const symbol = decodeString(topic0);
@@ -359,6 +270,9 @@ export async function fetchApprovedSpendersFromEvents(params: {
         // ignore malformed events
       }
     }
+
+    if (!nextCursor) break;
+    cursor = nextCursor;
   }
 
   return Array.from(spenders);
@@ -614,76 +528,65 @@ export async function fetchVestingSchedule(
 }
 
 /**
- * Fetch transaction history (events) for a token contract.
+ * Fetch transaction history (events) for a token contract via the Mercury indexer.
+ * Uses cursor-based pagination to walk past the Soroban RPC retention window.
  */
 export async function fetchTransactionHistory(
   contractId: string,
   config: NetworkConfig,
-): Promise<TransactionItem[]> {
-  const history: TransactionItem[] = [];
+  options: { cursor?: string; limit?: number } = {},
+): Promise<{ items: TransactionItem[]; nextCursor: string | null }> {
+  const { cursor, limit = 200 } = options;
   const topicTransfer = encodeTopicSymbol("transfer");
   const topicMint = encodeTopicSymbol("mint");
   const topicBurn = encodeTopicSymbol("burn");
 
-  const pageSize = 200;
-  const maxPages = 10;
+  const { events, nextCursor } = await fetchIndexedEvents(contractId, config, {
+    topics: [topicTransfer, topicMint, topicBurn],
+    cursor,
+    limit,
+  });
 
-  for (let page = 0; page < maxPages; page++) {
-    const events = await fetchMercuryEventsByContract(contractId, config, {
-      topics: [topicTransfer, topicMint, topicBurn],
-      limit: pageSize,
-      offset: page * pageSize,
-    });
+  const items: TransactionItem[] = [];
 
-    if (events.length === 0) break;
+  for (const event of events) {
+    const topic0 = toScVal(event.topic[0]);
+    if (!topic0) continue;
 
-    for (const event of events) {
-      const topics = readEventTopics(event);
-      const topic0 = toScVal(topics[0]);
-      if (!topic0) continue;
-
-      const typePath = decodeString(topic0);
-      if (
-        typePath !== "mint" &&
-        typePath !== "burn" &&
-        typePath !== "transfer"
-      ) {
-        continue;
-      }
-
-      const data = toScVal(
-        (event as { value?: unknown; data?: unknown }).value ??
-          (event as { data?: unknown }).data,
-      );
-      if (!data) continue;
-
-      const item: Partial<TransactionItem> = {
-        type: typePath as TransactionItem["type"],
-        ledger: readEventLedger(event),
-        timestamp: readEventTimestampNumber(event),
-        id: readEventId(event, `${readEventTxHash(event)}-${readEventLedger(event)}`),
-      };
-
-      item.amount = decodeI128(data);
-
-      if (typePath === "mint" && topics.length > 1) {
-        const to = toScVal(topics[1]);
-        if (to) item.to = decodeAddress(to);
-      } else if (typePath === "burn" && topics.length > 1) {
-        const from = toScVal(topics[1]);
-        if (from) item.from = decodeAddress(from);
-      } else if (typePath === "transfer" && topics.length > 2) {
-        const from = toScVal(topics[1]);
-        const to = toScVal(topics[2]);
-        if (from) item.from = decodeAddress(from);
-        if (to) item.to = decodeAddress(to);
-      }
-
-      history.push(item as TransactionItem);
+    const typePath = decodeString(topic0);
+    if (typePath !== "mint" && typePath !== "burn" && typePath !== "transfer") {
+      continue;
     }
+
+    const data = toScVal(event.value);
+    if (!data) continue;
+
+    const item: Partial<TransactionItem> = {
+      type: typePath as TransactionItem["type"],
+      ledger: event.ledger,
+      timestamp: Math.floor(Date.parse(event.timestamp) / 1000) || 0,
+      id: event.id || `${event.tx_hash}-${event.ledger}`,
+    };
+
+    item.amount = decodeI128(data);
+
+    if (typePath === "mint" && event.topic.length > 1) {
+      const to = toScVal(event.topic[1]);
+      if (to) item.to = decodeAddress(to);
+    } else if (typePath === "burn" && event.topic.length > 1) {
+      const from = toScVal(event.topic[1]);
+      if (from) item.from = decodeAddress(from);
+    } else if (typePath === "transfer" && event.topic.length > 2) {
+      const from = toScVal(event.topic[1]);
+      const to = toScVal(event.topic[2]);
+      if (from) item.from = decodeAddress(from);
+      if (to) item.to = decodeAddress(to);
+    }
+
+    items.push(item as TransactionItem);
   }
 
-  return history.reverse(); // Newest first
+  return { items: items.reverse(), nextCursor };
 }
 
 export interface TokenActivityInfo {
@@ -714,19 +617,17 @@ export async function fetchAccountOperations(
       const topicMint = encodeTopicSymbol("mint");
       const topicBurn = encodeTopicSymbol("burn");
       const pageSize = Math.min(limit, 200);
-      const offset = cursor ? Number(cursor) || 0 : 0;
 
-      const events = await fetchMercuryEventsByContract(accountId, config, {
+      const { events, nextCursor: nextIndexerCursor } = await fetchIndexedEvents(accountId, config, {
         topics: [topicTransfer, topicMint, topicBurn],
         limit: pageSize,
-        offset,
+        cursor: cursor ?? undefined,
       });
 
       const records: TokenActivityInfo[] = [];
 
       for (const event of events) {
-        const topics = readEventTopics(event);
-        const topic0 = toScVal(topics[0]);
+        const topic0 = toScVal(event.topic[0]);
         if (!topic0) continue;
 
         const typePath = decodeString(topic0);
@@ -738,42 +639,39 @@ export async function fetchAccountOperations(
           continue;
         }
 
-        const data = toScVal(
-          (event as { value?: unknown; data?: unknown }).value ??
-            (event as { data?: unknown }).data,
-        );
+        const data = toScVal(event.value);
         if (!data) continue;
 
         const amount = decodeI128(data);
         let from = "-";
         let to = "-";
 
-        if (typePath === "mint" && topics.length > 1) {
-          const toVal = toScVal(topics[1]);
+        if (typePath === "mint" && event.topic.length > 1) {
+          const toVal = toScVal(event.topic[1]);
           if (toVal) to = decodeAddress(toVal);
-        } else if (typePath === "burn" && topics.length > 1) {
-          const fromVal = toScVal(topics[1]);
+        } else if (typePath === "burn" && event.topic.length > 1) {
+          const fromVal = toScVal(event.topic[1]);
           if (fromVal) from = decodeAddress(fromVal);
-        } else if (typePath === "transfer" && topics.length > 2) {
-          const fromVal = toScVal(topics[1]);
-          const toVal = toScVal(topics[2]);
+        } else if (typePath === "transfer" && event.topic.length > 2) {
+          const fromVal = toScVal(event.topic[1]);
+          const toVal = toScVal(event.topic[2]);
           if (fromVal) from = decodeAddress(fromVal);
           if (toVal) to = decodeAddress(toVal);
         }
 
         records.push({
-          id: readEventId(event, `${readEventTxHash(event)}-${readEventLedger(event)}`),
-          pagingToken: String(offset + records.length),
+          id: event.id || `${event.tx_hash}-${event.ledger}`,
+          pagingToken: event.id || "",
           type: typePath as TokenActivityInfo["type"],
           amount,
           from,
           to,
-          timestamp: readEventTimestamp(event),
-          txHash: readEventTxHash(event),
+          timestamp: event.timestamp,
+          txHash: event.tx_hash,
         });
       }
 
-      const nextCursor = events.length === pageSize ? String(offset + pageSize) : null;
+      const nextCursor = nextIndexerCursor;
       return { records, nextCursor };
     }
 
