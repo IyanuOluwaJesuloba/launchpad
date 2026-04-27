@@ -1,6 +1,8 @@
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, Env, String};
+use soroban_sdk::{
+    contract, contractimpl, contracttype, symbol_short, Address, BytesN, Env, String,
+};
 
 // ---------------------------------------------------------------------------
 // Storage keys
@@ -190,6 +192,20 @@ impl TokenContract {
     pub fn update_contract_uri(env: Env, uri: String) {
         Self::_require_admin(&env);
         env.storage().instance().set(&DataKey::ContractUri, &uri);
+    }
+
+    /// Upgrade this contract's WASM code hash in place. Admin only.
+    ///
+    /// Security note: this preserves existing storage and contract address, so
+    /// new WASM must remain storage-compatible with previous deployments.
+    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
+        Self::_require_admin(&env);
+        assert!(
+            new_wasm_hash != BytesN::from_array(&env, &[0; 32]),
+            "invalid wasm hash"
+        );
+        env.deployer().update_current_contract_wasm(new_wasm_hash);
+        env.events().publish((symbol_short!("upgrade"),), true);
     }
 
     // ── Token operations ────────────────────────────────────────────────
@@ -1004,5 +1020,46 @@ mod test {
     fn test_contract_uri_not_set() {
         let (_, client, _, _) = setup();
         client.contract_uri();
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid wasm hash")]
+    fn test_upgrade_rejects_zero_hash() {
+        let (env, client, _, _) = setup();
+        let zero_hash = BytesN::from_array(&env, &[0; 32]);
+        client.upgrade(&zero_hash);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_non_admin_cannot_upgrade() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, TokenContract);
+        let client = TokenContractClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        let user = Address::generate(&env);
+
+        env.mock_all_auths();
+        client.initialize(
+            &admin,
+            &7u32,
+            &String::from_str(&env, "TestToken"),
+            &String::from_str(&env, "TST"),
+            &0i128,
+            &None,
+        );
+
+        let non_zero_hash = BytesN::from_array(&env, &[1; 32]);
+        env.mock_auths(&[soroban_sdk::testutils::MockAuth {
+            address: &user,
+            invoke: &soroban_sdk::testutils::MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "upgrade",
+                args: (non_zero_hash.clone(),).into_val(&env),
+                sub_invokes: &[],
+            },
+        }]);
+
+        client.upgrade(&non_zero_hash);
     }
 }
