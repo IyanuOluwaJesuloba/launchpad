@@ -7,6 +7,8 @@ import { NetworkProvider } from "./providers/NetworkProvider";
 import { AccessibilityProvider } from "./providers/AccessibilityProvider";
 import { LocaleProvider } from "./providers/LocaleProvider";
 import { I18nProvider } from "./providers/I18nProvider";
+import { ToastProvider } from "./providers/ToastProvider";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Navbar } from "./components/Navbar";
 import { MainnetWarning } from "./components/MainnetWarning";
 
@@ -48,6 +50,7 @@ export default function RootLayout({
           Skip to main content
         </a>
         <LocaleProvider>
+            <ToastProvider>
           <I18nProvider>
             <NetworkProvider>
               <SettingsProvider>
@@ -56,7 +59,7 @@ export default function RootLayout({
                     <Navbar />
                     <MainnetWarning />
                     <main id="main-content" className="pt-16" role="main">
-                      {children}
+                      <ErrorBoundary>{children}</ErrorBoundary>
                     </main>
                     <footer
                       role="contentinfo"
@@ -80,6 +83,7 @@ export default function RootLayout({
               </SettingsProvider>
             </NetworkProvider>
           </I18nProvider>
+        </ToastProvider>
         </LocaleProvider>
       </body>
     </html>

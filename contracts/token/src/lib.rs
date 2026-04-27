@@ -24,6 +24,10 @@ pub enum DataKey {
     Allowance(Address, Address), // (owner, spender)
     Frozen(Address),
     IsPaused,
+    /// Set to `true` after `revoke_admin` is called. Once locked, no admin
+    /// operation (mint, burn_admin, freeze, set_admin, propose_admin) can
+    /// ever succeed again — the token becomes effectively immutable.
+    Locked,
 }
 
 // ---------------------------------------------------------------------------
@@ -124,11 +128,14 @@ impl TokenContract {
         }
     }
 
-    /// Burn `amount` tokens from the caller's own balance.
+    /// Burn `amount` tokens from the caller's own balance. Refuses to
+    /// run when the account is frozen so a holder cannot dodge a freeze
+    /// by destroying tokens.
     pub fn burn_self(env: Env, from: Address, amount: i128) {
         Self::_check_paused(&env);
         from.require_auth();
         assert!(amount > 0, "amount must be positive");
+        assert!(!Self::_is_frozen(&env, &from), "account is frozen");
         Self::_burn(&env, &from, amount);
     }
 
@@ -143,6 +150,7 @@ impl TokenContract {
 
     /// Accept the admin role. Must be called by the pending admin.
     pub fn accept_admin(env: Env) {
+        Self::_require_not_locked(&env);
         let pending: Address = env
             .storage()
             .instance()
@@ -160,6 +168,27 @@ impl TokenContract {
         env.storage().instance().set(&DataKey::Admin, &new_admin);
         env.events()
             .publish((symbol_short!("set_admin"),), new_admin);
+    }
+
+    /// Permanently revoke the admin role and lock the contract.
+    ///
+    /// After this call:
+    /// - No further `mint`, `burn_admin`, `freeze`, `unfreeze`,
+    ///   `set_admin`, `propose_admin`, `accept_admin`, `pause`, or
+    ///   `unpause` operation can ever succeed.
+    /// - The Admin storage entry is removed and a `Locked` flag is set.
+    /// - `is_locked()` returns `true` from then on.
+    ///
+    /// Holders can still `transfer`, `approve`, `transfer_from`, `burn`,
+    /// and `burn_self`. The token becomes trustless / immutable.
+    ///
+    /// **This action is irreversible.**
+    pub fn revoke_admin(env: Env) {
+        Self::_require_admin(&env);
+        env.storage().instance().set(&DataKey::Locked, &true);
+        env.storage().instance().remove(&DataKey::Admin);
+        env.storage().instance().remove(&DataKey::PendingAdmin);
+        env.events().publish((symbol_short!("revoked"),), true);
     }
 
     /// Freeze an account, preventing it from sending tokens. Admin only.
@@ -313,10 +342,27 @@ impl TokenContract {
     }
 
     pub fn admin(env: Env) -> Address {
+        let locked: bool = env
+            .storage()
+            .instance()
+            .get(&DataKey::Locked)
+            .unwrap_or(false);
+        if locked {
+            panic!("admin revoked");
+        }
         env.storage()
             .instance()
             .get(&DataKey::Admin)
             .expect("not initialized")
+    }
+
+    /// Returns `true` once `revoke_admin` has been called. Once locked, no
+    /// admin operation can ever succeed again.
+    pub fn is_locked(env: Env) -> bool {
+        env.storage()
+            .instance()
+            .get(&DataKey::Locked)
+            .unwrap_or(false)
     }
 
     pub fn decimals(env: Env) -> u32 {
@@ -384,12 +430,24 @@ impl TokenContract {
     // ── Internal helpers ────────────────────────────────────────────────
 
     fn _require_admin(env: &Env) {
+        Self::_require_not_locked(env);
         let admin: Address = env
             .storage()
             .instance()
             .get(&DataKey::Admin)
-            .expect("not initialized");
+            .expect("admin revoked");
         admin.require_auth();
+    }
+
+    fn _require_not_locked(env: &Env) {
+        let locked: bool = env
+            .storage()
+            .instance()
+            .get(&DataKey::Locked)
+            .unwrap_or(false);
+        if locked {
+            panic!("admin revoked: contract is locked");
+        }
     }
 
     fn _is_frozen(env: &Env, addr: &Address) -> bool {
@@ -701,6 +759,43 @@ mod test {
     }
 
     #[test]
+    fn test_burn_self_reduces_balance_and_supply() {
+        let (_, client, admin, user) = setup();
+        // Admin sends some tokens to user, who then burns them themselves.
+        client.transfer(&admin, &user, &500_0000000i128);
+        let supply_before = client.total_supply();
+
+        client.burn_self(&user, &200_0000000i128);
+
+        assert_eq!(client.balance(&user), 300_0000000i128);
+        assert_eq!(client.total_supply(), supply_before - 200_0000000i128);
+    }
+
+    #[test]
+    #[should_panic(expected = "amount must be positive")]
+    fn test_burn_self_rejects_zero() {
+        let (_, client, _, user) = setup();
+        client.burn_self(&user, &0i128);
+    }
+
+    #[test]
+    #[should_panic(expected = "insufficient balance to burn")]
+    fn test_burn_self_insufficient_balance() {
+        let (_, client, _, user) = setup();
+        // user has zero balance; should fail.
+        client.burn_self(&user, &1i128);
+    }
+
+    #[test]
+    #[should_panic(expected = "account is frozen")]
+    fn test_burn_self_blocked_when_frozen() {
+        let (_, client, admin, user) = setup();
+        client.transfer(&admin, &user, &1_000i128);
+        client.freeze_account(&user);
+        client.burn_self(&user, &500i128);
+    }
+
+    #[test]
     fn test_transfer() {
         let (_, client, admin, user) = setup();
         client.transfer(&admin, &user, &250_0000000i128);
@@ -814,6 +909,82 @@ mod test {
         // Freeze user, then attempt transfer_from.
         client.freeze_account(&user);
         client.transfer_from(&spender, &user, &admin, &500i128);
+    }
+
+    // ── Revoke admin / lock tests ───────────────────────────────────────
+
+    #[test]
+    fn test_revoke_admin_sets_locked_flag() {
+        let (_, client, _, _) = setup();
+        assert!(!client.is_locked());
+        client.revoke_admin();
+        assert!(client.is_locked());
+    }
+
+    #[test]
+    #[should_panic(expected = "admin revoked")]
+    fn test_admin_getter_after_revoke_panics() {
+        let (_, client, _, _) = setup();
+        client.revoke_admin();
+        // Admin storage entry has been removed.
+        let _ = client.admin();
+    }
+
+    #[test]
+    #[should_panic(expected = "admin revoked: contract is locked")]
+    fn test_mint_after_revoke_panics() {
+        let (_, client, _, user) = setup();
+        client.revoke_admin();
+        client.mint(&user, &1i128);
+    }
+
+    #[test]
+    #[should_panic(expected = "admin revoked: contract is locked")]
+    fn test_burn_admin_after_revoke_panics() {
+        let (_, client, admin, _) = setup();
+        client.revoke_admin();
+        client.burn_admin(&admin, &1i128);
+    }
+
+    #[test]
+    #[should_panic(expected = "admin revoked: contract is locked")]
+    fn test_set_admin_after_revoke_panics() {
+        let (env, client, _, _) = setup();
+        let other = Address::generate(&env);
+        client.revoke_admin();
+        client.set_admin(&other);
+    }
+
+    #[test]
+    #[should_panic(expected = "admin revoked: contract is locked")]
+    fn test_propose_admin_after_revoke_panics() {
+        let (env, client, _, _) = setup();
+        let other = Address::generate(&env);
+        client.revoke_admin();
+        client.propose_admin(&other);
+    }
+
+    #[test]
+    #[should_panic(expected = "admin revoked: contract is locked")]
+    fn test_freeze_after_revoke_panics() {
+        let (_, client, _, user) = setup();
+        client.revoke_admin();
+        client.freeze_account(&user);
+    }
+
+    #[test]
+    fn test_holder_actions_still_work_after_revoke() {
+        let (_, client, admin, user) = setup();
+        // Move some tokens to the user before locking.
+        client.transfer(&admin, &user, &1_000i128);
+        client.revoke_admin();
+
+        // Transfers, approvals and self-burn must still work.
+        client.transfer(&user, &admin, &200i128);
+        assert_eq!(client.balance(&user), 800i128);
+
+        client.burn_self(&user, &100i128);
+        assert_eq!(client.balance(&user), 700i128);
     }
 
     #[test]
