@@ -12,6 +12,7 @@ pub enum DataKey {
     Admin,
     PendingAdmin,
     TokenContract,
+    IsPaused,
     Schedule(Address),
 }
 
@@ -35,6 +36,7 @@ pub struct VestingSchedule {
 /// Contributor issues layered on top:
 /// - #3  revoke() — admin reclaims unvested tokens
 /// - #5  structured events audit
+/// - #149 pause/unpause circuit breaker
 #[contract]
 pub struct VestingContract;
 
@@ -97,6 +99,7 @@ impl VestingContract {
         cliff_ledger: u32,
         end_ledger: u32,
     ) {
+        Self::_check_paused(&env);
         let admin: Address = env
             .storage()
             .instance()
@@ -156,6 +159,7 @@ impl VestingContract {
     /// Release all currently vested (but unreleased) tokens to the recipient.
     /// Can be called by anyone.
     pub fn release(env: Env, recipient: Address) {
+        Self::_check_paused(&env);
         let key = DataKey::Schedule(recipient.clone());
         let mut schedule: VestingSchedule = env
             .storage()
@@ -198,6 +202,7 @@ impl VestingContract {
     /// Admin-only: revoke a schedule, send vested portion to recipient,
     /// return unvested remainder to admin.
     pub fn revoke(env: Env, recipient: Address) {
+        Self::_check_paused(&env);
         Self::_require_admin(&env);
 
         let key = DataKey::Schedule(recipient.clone());
@@ -269,6 +274,28 @@ impl VestingContract {
         schedule.released
     }
 
+    /// Returns `true` if the contract is currently paused.
+    pub fn is_paused(env: Env) -> bool {
+        env.storage()
+            .instance()
+            .get(&DataKey::IsPaused)
+            .unwrap_or(false)
+    }
+
+    /// Pause the vesting contract. Admin only.
+    pub fn pause(env: Env) {
+        Self::_require_admin(&env);
+        env.storage().instance().set(&DataKey::IsPaused, &true);
+        env.events().publish((symbol_short!("pause"),), true);
+    }
+
+    /// Unpause the vesting contract. Admin only.
+    pub fn unpause(env: Env) {
+        Self::_require_admin(&env);
+        env.storage().instance().remove(&DataKey::IsPaused);
+        env.events().publish((symbol_short!("pause"),), false);
+    }
+
     /// Return the full schedule struct for a recipient.
     pub fn get_schedule(env: Env, recipient: Address) -> VestingSchedule {
         let key = DataKey::Schedule(recipient);
@@ -287,6 +314,17 @@ impl VestingContract {
             .get(&DataKey::Admin)
             .expect("not initialized");
         admin.require_auth();
+    }
+
+    fn _check_paused(env: &Env) {
+        if env
+            .storage()
+            .instance()
+            .get::<DataKey, bool>(&DataKey::IsPaused)
+            .unwrap_or(false)
+        {
+            panic!("vesting contract is paused");
+        }
     }
 
     /// Cliff + linear vesting formula.
