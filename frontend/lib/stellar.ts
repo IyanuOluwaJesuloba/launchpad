@@ -46,7 +46,7 @@ export interface VestingScheduleInfo {
 }
 
 export interface TransactionItem {
-  type: "mint" | "burn" | "transfer";
+  type: "mint" | "burn" | "clawback" | "transfer";
   from?: string;
   to?: string;
   amount: string;
@@ -553,9 +553,10 @@ export async function fetchTransactionHistory(
   const topicTransfer = encodeTopicSymbol("transfer");
   const topicMint = encodeTopicSymbol("mint");
   const topicBurn = encodeTopicSymbol("burn");
+  const topicClawback = encodeTopicSymbol("clawback");
 
   const { events, nextCursor } = await fetchIndexedEvents(contractId, config, {
-    topics: [topicTransfer, topicMint, topicBurn],
+    topics: [topicTransfer, topicMint, topicBurn, topicClawback],
     cursor,
     limit,
   });
@@ -567,7 +568,7 @@ export async function fetchTransactionHistory(
     if (!topic0) continue;
 
     const typePath = decodeString(topic0);
-    if (typePath !== "mint" && typePath !== "burn" && typePath !== "transfer") {
+    if (typePath !== "mint" && typePath !== "burn" && typePath !== "clawback" && typePath !== "transfer") {
       continue;
     }
 
@@ -586,7 +587,7 @@ export async function fetchTransactionHistory(
     if (typePath === "mint" && event.topic.length > 1) {
       const to = toScVal(event.topic[1]);
       if (to) item.to = decodeAddress(to);
-    } else if (typePath === "burn" && event.topic.length > 1) {
+    } else if ((typePath === "burn" || typePath === "clawback") && event.topic.length > 1) {
       const from = toScVal(event.topic[1]);
       if (from) item.from = decodeAddress(from);
     } else if (typePath === "transfer" && event.topic.length > 2) {
@@ -605,7 +606,7 @@ export async function fetchTransactionHistory(
 export interface TokenActivityInfo {
   id: string;
   pagingToken: string;
-  type: "mint" | "transfer" | "burn" | "other";
+  type: "mint" | "transfer" | "burn" | "clawback" | "other";
   amount: string;
   from: string;
   to: string;
@@ -629,10 +630,11 @@ export async function fetchAccountOperations(
       const topicTransfer = encodeTopicSymbol("transfer");
       const topicMint = encodeTopicSymbol("mint");
       const topicBurn = encodeTopicSymbol("burn");
+      const topicClawback = encodeTopicSymbol("clawback");
       const pageSize = Math.min(limit, 200);
 
       const { events, nextCursor: nextIndexerCursor } = await fetchIndexedEvents(accountId, config, {
-        topics: [topicTransfer, topicMint, topicBurn],
+        topics: [topicTransfer, topicMint, topicBurn, topicClawback],
         limit: pageSize,
         cursor: cursor ?? undefined,
       });
@@ -647,6 +649,7 @@ export async function fetchAccountOperations(
         if (
           typePath !== "mint" &&
           typePath !== "burn" &&
+          typePath !== "clawback" &&
           typePath !== "transfer"
         ) {
           continue;
@@ -662,7 +665,7 @@ export async function fetchAccountOperations(
         if (typePath === "mint" && event.topic.length > 1) {
           const toVal = toScVal(event.topic[1]);
           if (toVal) to = decodeAddress(toVal);
-        } else if (typePath === "burn" && event.topic.length > 1) {
+        } else if ((typePath === "burn" || typePath === "clawback") && event.topic.length > 1) {
           const fromVal = toScVal(event.topic[1]);
           if (fromVal) from = decodeAddress(fromVal);
         } else if (typePath === "transfer" && event.topic.length > 2) {

@@ -35,7 +35,13 @@ const deploySchema = z
     maxSupply: optionalNumber(z.number().min(1, "Max supply must be at least 1")),
     adminAddress: z
       .string()
-      .regex(/^G[A-Z2-7]{55}$/, "Invalid Stellar public key"),
+      .regex(/^[GC][A-Z2-7]{55}$/, "Invalid Stellar address or contract ID"),
+    adminMode: z.enum(["wallet", "custom"]),
+    complianceNodeAddress: z
+      .string()
+      .regex(/^C[A-Z2-7]{55}$/, "Invalid compliance node contract ID")
+      .optional()
+      .or(z.literal("")),
     // Authorization flags
     authorizationRequired: z.boolean(),
     authorizationRevocable: z.boolean(),
@@ -86,7 +92,9 @@ export default function DeployForm() {
       initialSupply: 0,
       name: "",
       symbol: "",
-      adminAddress: "",
+      adminAddress: publicKey ?? "",
+      adminMode: publicKey ? "wallet" : "custom",
+      complianceNodeAddress: "",
       authorizationRequired: false,
       authorizationRevocable: false,
       description: "",
@@ -101,7 +109,7 @@ export default function DeployForm() {
     let fieldsToValidate: (keyof DeployFormData)[] = [];
     if (currentStep === 1) fieldsToValidate = ["name", "symbol", "decimals"];
     if (currentStep === 2) fieldsToValidate = ["initialSupply", "maxSupply"];
-    if (currentStep === 3) fieldsToValidate = ["adminAddress"];
+    if (currentStep === 3) fieldsToValidate = ["adminMode", "adminAddress", "complianceNodeAddress"];
 
     const isStepValid = await trigger(fieldsToValidate);
     if (isStepValid) {
@@ -227,7 +235,11 @@ export default function DeployForm() {
   <StepSupply control={control} errors={errors} />
 )}
           {currentStep === 3 && (
-            <StepAdmin register={register} errors={errors} control={control} />
+            <StepAdmin
+              register={register}
+              errors={errors}
+              control={control}
+            />
           )}
           {currentStep === 4 && <StepReview control={control} />}
         </div>
@@ -295,6 +307,8 @@ export default function DeployForm() {
                         : null,
                       formData.authorizationRequired ?? false,
                       formData.authorizationRevocable ?? false,
+                      formData.complianceNodeAddress || null,
+                      publicKey ?? undefined,
                     );
                     setPreflightResult({
                       isLoading: false,
