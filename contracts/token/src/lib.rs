@@ -17,6 +17,7 @@ pub enum DataKey {
     TotalSupply,
     TotalBurned,
     MaxSupply,
+    MaxBalancePerAccount,
     ContractUri,
     Balance(Address),
     Allowance(Address, Address), // (owner, spender)
@@ -304,6 +305,37 @@ impl TokenContract {
         env.storage().instance().get(&DataKey::MaxSupply)
     }
 
+    /// Optional whale protection: max balance per account as a percentage of total supply.
+    ///
+    /// If set to `p`, then for any transfer/mint to a non-admin recipient:
+    /// `balance(recipient) <= total_supply * p / 100`.
+    pub fn max_balance_per_account(env: Env) -> Option<u32> {
+        env.storage().instance().get(&DataKey::MaxBalancePerAccount)
+    }
+
+    /// Set the optional max balance per account as a percentage of total supply.
+    /// Admin only.
+    ///
+    /// - `None` disables whale protection
+    /// - `Some(p)` enables it, where `p` must be between 1 and 100 (inclusive)
+    pub fn set_max_balance_per_account(env: Env, max_balance_per_account: Option<u32>) {
+        Self::_require_admin(&env);
+
+        if let Some(p) = max_balance_per_account {
+            assert!((1..=100).contains(&p), "max_balance_per_account must be 1..=100");
+            env.storage()
+                .instance()
+                .set(&DataKey::MaxBalancePerAccount, &p);
+        } else {
+            env.storage().instance().remove(&DataKey::MaxBalancePerAccount);
+        }
+
+        env.events().publish(
+            (symbol_short!("set_max_bal"),),
+            max_balance_per_account,
+        );
+    }
+
     /// Returns `true` if the contract is currently paused.
     pub fn is_paused(env: Env) -> bool {
         env.storage()
@@ -348,6 +380,36 @@ impl TokenContract {
         }
     }
 
+    fn _enforce_max_balance_per_account(env: &Env, to: &Address, new_balance: i128, supply: i128) {
+        let Some(pct) = env
+            .storage()
+            .instance()
+            .get::<DataKey, u32>(&DataKey::MaxBalancePerAccount)
+        else {
+            return;
+        };
+
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("not initialized");
+
+        if to == &admin {
+            return;
+        }
+
+        let max_allowed = supply
+            .checked_mul(pct as i128)
+            .expect("max balance calc overflow")
+            / 100i128;
+
+        assert!(
+            new_balance <= max_allowed,
+            "max balance per account exceeded"
+        );
+    }
+
     fn _mint(env: &Env, to: &Address, amount: i128) {
         let supply: i128 = env
             .storage()
@@ -367,6 +429,9 @@ impl TokenContract {
         let key = DataKey::Balance(to.clone());
         let balance: i128 = env.storage().persistent().get(&key).unwrap_or(0);
         let new_balance = balance.checked_add(amount).expect("balance overflow");
+
+        Self::_enforce_max_balance_per_account(env, to, new_balance, new_supply);
+
         env.storage().persistent().set(&key, &new_balance);
 
         env.storage()
@@ -424,9 +489,22 @@ impl TokenContract {
             .set(&from_key, &(from_balance - amount));
 
         let to_balance: i128 = env.storage().persistent().get(&to_key).unwrap_or(0);
+
+        let supply: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TotalSupply)
+            .unwrap_or(0);
+
+        let new_to_balance = to_balance
+            .checked_add(amount)
+            .expect("balance overflow");
+
+        Self::_enforce_max_balance_per_account(env, to, new_to_balance, supply);
+
         env.storage()
             .persistent()
-            .set(&to_key, &(to_balance + amount));
+            .set(&to_key, &new_to_balance);
 
         env.events().publish(
             (symbol_short!("transfer"), from.clone(), to.clone()),
@@ -464,6 +542,72 @@ mod test {
         );
 
         (env, client, admin, user)
+    }
+
+    // ── max_balance_per_account tests ───────────────────────────────────
+
+    #[test]
+    fn test_max_balance_per_account_getter_none() {
+        let (_, client, _, _) = setup();
+        assert_eq!(client.max_balance_per_account(), None);
+    }
+
+    #[test]
+    fn test_set_max_balance_per_account_enforces_on_transfer() {
+        let (_, client, admin, user) = setup();
+
+        client.set_max_balance_per_account(&Some(10u32));
+
+        // total_supply == 1_000_000_0000000; 10% == 100_000_0000000
+        // attempt to transfer 100_000_0000001 should exceed cap.
+        client.transfer(&admin, &user, &100_000_0000000i128);
+        assert_eq!(client.balance(&user), 100_000_0000000i128);
+    }
+
+    #[test]
+    #[should_panic(expected = "max balance per account exceeded")]
+    fn test_set_max_balance_per_account_transfer_exceeds_panics() {
+        let (_, client, admin, user) = setup();
+
+        client.set_max_balance_per_account(&Some(10u32));
+        client.transfer(&admin, &user, &100_000_0000000i128);
+
+        // one more token should exceed cap.
+        client.transfer(&admin, &user, &1i128);
+    }
+
+    #[test]
+    fn test_set_max_balance_per_account_enforces_on_mint() {
+        let (_, client, _, user) = setup();
+
+        client.set_max_balance_per_account(&Some(10u32));
+
+        // mint up to cap succeeds
+        client.mint(&user, &100_000_0000000i128);
+        assert_eq!(client.balance(&user), 100_000_0000000i128);
+    }
+
+    #[test]
+    #[should_panic(expected = "max balance per account exceeded")]
+    fn test_set_max_balance_per_account_mint_exceeds_panics() {
+        let (_, client, _, user) = setup();
+
+        client.set_max_balance_per_account(&Some(10u32));
+        client.mint(&user, &100_000_0000000i128);
+
+        // minting 1 more exceeds cap
+        client.mint(&user, &1i128);
+    }
+
+    #[test]
+    fn test_admin_recipient_exempt_from_max_balance_per_account() {
+        let (_, client, admin, user) = setup();
+
+        client.set_max_balance_per_account(&Some(1u32));
+
+        // Transfer to admin should not be blocked even if it would exceed the cap.
+        client.mint(&user, &10_000i128);
+        client.transfer(&user, &admin, &10_000i128);
     }
 
     #[test]
