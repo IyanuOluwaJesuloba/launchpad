@@ -76,6 +76,19 @@ pub enum DataKey {
     AuthorizationRequired,
     AuthorizationRevocable,
     AuthorizedHolder(Address),
+    /// Set once by `launch_seal`. Holds the issuer's commitment together with
+    /// the ledger and total supply at the moment of sealing (#493).
+    LaunchSeal,
+}
+
+/// Creator-attested record that a launch reached the issuer's success
+/// threshold. Written once by `launch_seal` and never modified.
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[contracttype]
+pub struct LaunchSeal {
+    pub commitment: BytesN<32>,
+    pub ledger: u32,
+    pub supply: i128,
 }
 
 #[derive(Clone, Debug)]
@@ -181,6 +194,7 @@ pub trait ComplianceNodeInterface {
 /// - #2  two-step admin transfer (propose_admin / accept_admin)
 /// - #4  max_supply cap enforcement in mint
 /// - #138 clawback() and #163 compliance-node transfer checks
+/// - #493 launch_seal() graduation signal
 #[contract]
 pub struct TokenContract;
 
@@ -1118,6 +1132,44 @@ impl TokenContract {
             .instance()
             .get(&DataKey::ComplianceNode)
             .unwrap_or(None)
+    }
+
+    // ── Launch seal (#493) ──────────────────────────────────────────────
+
+    /// Record that this launch reached the issuer's definition of success.
+    /// Admin only, and can only be called once.
+    ///
+    /// `commitment` is an opaque 32-byte value chosen by the issuer (e.g. the
+    /// hash of a published success criterion). The ledger sequence and total
+    /// supply at the moment of sealing are stored alongside it, giving
+    /// indexers an objective, on-chain signal to sort launches by.
+    pub fn launch_seal(env: Env, commitment: BytesN<32>) {
+        Self::_require_admin(&env);
+        if env.storage().instance().has(&DataKey::LaunchSeal) {
+            panic!("launch already sealed");
+        }
+
+        let seal = LaunchSeal {
+            commitment,
+            ledger: env.ledger().sequence(),
+            supply: Self::total_supply(env.clone()),
+        };
+        env.storage().instance().set(&DataKey::LaunchSeal, &seal);
+
+        env.events().publish(
+            (symbol_short!("seal"),),
+            (seal.commitment, seal.ledger, seal.supply),
+        );
+    }
+
+    /// Returns `true` once `launch_seal` has been called.
+    pub fn sealed(env: Env) -> bool {
+        env.storage().instance().has(&DataKey::LaunchSeal)
+    }
+
+    /// Returns the seal record, or `None` if the launch has not been sealed.
+    pub fn launch_seal_info(env: Env) -> Option<LaunchSeal> {
+        env.storage().instance().get(&DataKey::LaunchSeal)
     }
 
     // ── Internal helpers ────────────────────────────────────────────────
@@ -3880,5 +3932,89 @@ mod test {
                 )
             ]
         );
+    }
+
+    // ── launch_seal tests (#493) ────────────────────────────────────────
+
+    #[test]
+    fn test_launch_seal_records_ledger_and_supply() {
+        use soroban_sdk::testutils::Ledger as _;
+        let (env, client, _, _) = setup();
+        assert!(!client.sealed());
+        assert_eq!(client.launch_seal_info(), None);
+
+        env.ledger().set_sequence_number(1234);
+        let commitment = BytesN::from_array(&env, &[7u8; 32]);
+        client.launch_seal(&commitment);
+
+        assert!(client.sealed());
+        assert_eq!(
+            client.launch_seal_info(),
+            Some(LaunchSeal {
+                commitment: commitment.clone(),
+                ledger: 1234,
+                supply: 1_000_000_0000000i128,
+            })
+        );
+
+        let events = env.events().all();
+        assert_eq!(
+            events.slice(events.len() - 1..),
+            soroban_sdk::vec![
+                &env,
+                (
+                    client.address.clone(),
+                    (symbol_short!("seal"),).into_val(&env),
+                    (commitment, 1234u32, 1_000_000_0000000i128).into_val(&env)
+                )
+            ]
+        );
+    }
+
+    #[test]
+    fn test_launch_seal_supply_is_frozen_at_seal_time() {
+        let (env, client, _, user) = setup();
+        client.launch_seal(&BytesN::from_array(&env, &[1u8; 32]));
+        client.mint(&user, &500i128);
+        assert_eq!(client.launch_seal_info().unwrap().supply, 1_000_000_0000000i128);
+    }
+
+    #[test]
+    #[should_panic(expected = "launch already sealed")]
+    fn test_launch_seal_only_once() {
+        let (env, client, _, _) = setup();
+        client.launch_seal(&BytesN::from_array(&env, &[1u8; 32]));
+        client.launch_seal(&BytesN::from_array(&env, &[2u8; 32]));
+    }
+
+    #[test]
+    #[should_panic(expected = "admin revoked: contract is locked")]
+    fn test_launch_seal_fails_after_revoke_admin() {
+        let (env, client, _, _) = setup();
+        client.revoke_admin();
+        client.launch_seal(&BytesN::from_array(&env, &[1u8; 32]));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_launch_seal_requires_admin_auth() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, TokenContract);
+        let client = TokenContractClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        env.mock_all_auths();
+        client.initialize(
+            &admin,
+            &7u32,
+            &String::from_str(&env, "TestToken"),
+            &String::from_str(&env, "TST"),
+            &0i128,
+            &None,
+            &false,
+            &false,
+            &None,
+        );
+        env.set_auths(&[]);
+        client.launch_seal(&BytesN::from_array(&env, &[1u8; 32]));
     }
 }

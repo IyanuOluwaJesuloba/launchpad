@@ -17,6 +17,19 @@ fail CI if this ever drifts from the contract source again (see issue #340).
 
 | Function | Topic 0 | Topic 1 | Topic 2 | Data |
 |---|---|---|---|---|
+| `initialize` | `init` | — | — | `admin: Address` |
+| `mint` | `mint` | `to: Address` | — | `amount: i128` |
+| `burn` | `burn` | `from: Address` | — | `amount: i128` |
+| `set_admin` | `set_admin` | — | — | `new_admin: Address` |
+| `transfer` | `transfer` | `from: Address` | `to: Address` | `amount: i128` |
+| `approve` | `approve` | `owner: Address` | `spender: Address` | `amount: i128` |
+| `transfer_from` | `transfer` | `from: Address` | `to: Address` | `amount: i128` |
+| `launch_seal` | `seal` | — | — | `(commitment: BytesN<32>, ledger: u32, supply: i128)` |
+
+> `transfer_from` re-uses the `transfer` event emitted by the internal
+> `_transfer` helper because the observable balance change is identical to a
+> direct transfer. The allowance deduction is an implementation detail visible
+> through the `allowance` getter.
 | `initialize` | `init` | — | — | admin: Address |
 | `mint`, `mint_batch`, `initialize (when initial_supply > 0)` | `mint` | `to: Address` | — | amount: i128 |
 | `burn`, `burn_admin`, `burn_self` | `burn` | `from: Address` | — | amount: i128 |
