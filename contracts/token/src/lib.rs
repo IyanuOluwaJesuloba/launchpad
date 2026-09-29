@@ -37,6 +37,11 @@ const TTL_LEDGERS: u32 = 365 * 24 * 60 * 60 / 5;
 /// instance kept alive by any other call.
 const ADMIN_PROPOSAL_EXPIRY_LEDGERS: u32 = TTL_LEDGERS;
 
+/// Longest contract URI, in bytes, that `initialize` / `update_contract_uri`
+/// will store. Comfortably fits an `ipfs://<CIDv1>/metadata.json` or a normal
+/// `https://` URL while keeping the instance entry small.
+const MAX_CONTRACT_URI_LEN: u32 = 256;
+
 // ---------------------------------------------------------------------------
 // Storage keys
 // ---------------------------------------------------------------------------
@@ -145,6 +150,9 @@ pub enum TokenError {
     NotInitialized = 23,
     /// `revoke_admin` requires the compliance node to be cleared first.
     ComplianceNodeMustBeCleared = 24,
+    /// Contract URI is empty, too long, contains whitespace or control
+    /// characters, or uses a scheme other than `https://` or `ipfs://`.
+    InvalidContractUri = 25,
 }
 
 #[contractclient(name = "ComplianceNodeClient")]
@@ -246,6 +254,7 @@ impl TokenContract {
                 .set(&DataKey::ComplianceNode, &node);
         }
         if let Some(uri) = contract_uri {
+            Self::_require_valid_contract_uri(&env, &uri);
             env.storage().instance().set(&DataKey::ContractUri, &uri);
         }
 
@@ -654,8 +663,12 @@ impl TokenContract {
 
     /// Set or update the contract URI pointing to off-chain metadata JSON.
     /// Admin only.
+    ///
+    /// Only `https://` and `ipfs://` URIs of at most `MAX_CONTRACT_URI_LEN`
+    /// bytes are accepted; anything else panics with `InvalidContractUri`.
     pub fn update_contract_uri(env: Env, uri: String) {
         Self::_require_admin(&env);
+        Self::_require_valid_contract_uri(&env, &uri);
         env.storage().instance().set(&DataKey::ContractUri, &uri);
         env.events().publish((symbol_short!("upd_uri"),), uri);
     }
@@ -1136,6 +1149,30 @@ impl TokenContract {
             .get(&DataKey::Admin)
             .unwrap_or_else(|| panic_with_error!(env, TokenError::Locked));
         admin.require_auth();
+    }
+
+    /// Reject any contract URI that is not a bounded `https://` or `ipfs://`
+    /// URI. Frontends render this value as a link, so a `javascript:` or
+    /// `data:` URI stored here would be a stored XSS against every visitor.
+    /// The scheme match is ASCII case-insensitive, as URI schemes are, and
+    /// whitespace / control bytes are refused anywhere in the string.
+    fn _require_valid_contract_uri(env: &Env, uri: &String) {
+        let len = uri.len();
+        if len == 0 || len > MAX_CONTRACT_URI_LEN {
+            panic_with_error!(env, TokenError::InvalidContractUri);
+        }
+        let mut buf = [0u8; MAX_CONTRACT_URI_LEN as usize];
+        let bytes = &mut buf[..len as usize];
+        uri.copy_into_slice(bytes);
+
+        let has_scheme = |scheme: &[u8]| {
+            bytes.len() > scheme.len() && bytes[..scheme.len()].eq_ignore_ascii_case(scheme)
+        };
+        let allowed_scheme = has_scheme(b"https://") || has_scheme(b"ipfs://");
+        let printable = bytes.iter().all(|b| *b > 0x20 && *b != 0x7f);
+        if !allowed_scheme || !printable {
+            panic_with_error!(env, TokenError::InvalidContractUri);
+        }
     }
 
     /// The TTL to request for a persistent entry: our desired window, capped
@@ -3059,6 +3096,92 @@ mod test {
         );
 
         assert_eq!(client.contract_uri(), Some(uri));
+    }
+
+    #[test]
+    fn test_update_contract_uri_accepts_https_and_ipfs() {
+        let (env, client, _, _) = setup();
+        for raw in [
+            "https://example.com/token-metadata.json",
+            "HTTPS://example.com/meta.json",
+            "ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi/metadata.json",
+        ] {
+            let uri = String::from_str(&env, raw);
+            client.update_contract_uri(&uri);
+            assert_eq!(client.contract_uri(), Some(uri));
+        }
+    }
+
+    #[test]
+    fn test_update_contract_uri_rejects_unsafe_uris() {
+        let (env, client, _, _) = setup();
+        for raw in [
+            "javascript:alert(1)",
+            "JavaScript:alert(1)",
+            "data:text/html,<script>alert(1)</script>",
+            "http://example.com/meta.json",
+            "https:example.com",
+            "https://",
+            " https://example.com",
+            "https://example.com/a b",
+            "https://example.com/\n",
+            "",
+        ] {
+            assert_eq!(
+                client.try_update_contract_uri(&String::from_str(&env, raw)),
+                Err(Ok(TokenError::InvalidContractUri.into())),
+                "expected {raw:?} to be rejected"
+            );
+        }
+        assert_eq!(client.contract_uri(), None);
+    }
+
+    /// An `https://` URI of exactly `len` bytes.
+    fn https_uri_of_len(env: &Env, len: usize) -> String {
+        let mut buf = [b'a'; 2 * MAX_CONTRACT_URI_LEN as usize];
+        let prefix = b"https://example.com/";
+        buf[..prefix.len()].copy_from_slice(prefix);
+        String::from_bytes(env, &buf[..len])
+    }
+
+    #[test]
+    fn test_update_contract_uri_length_bound() {
+        let (env, client, _, _) = setup();
+        let max = MAX_CONTRACT_URI_LEN as usize;
+
+        let at_limit = https_uri_of_len(&env, max);
+        client.update_contract_uri(&at_limit);
+        assert_eq!(client.contract_uri(), Some(at_limit.clone()));
+
+        assert_eq!(
+            client.try_update_contract_uri(&https_uri_of_len(&env, max + 1)),
+            Err(Ok(TokenError::InvalidContractUri.into()))
+        );
+        assert_eq!(client.contract_uri(), Some(at_limit));
+    }
+
+    #[test]
+    fn test_initialize_rejects_unsafe_contract_uri() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, TokenContract);
+        let client = TokenContractClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+
+        let result = client.try_initialize(
+            &admin,
+            &7u32,
+            &String::from_str(&env, "TestToken"),
+            &String::from_str(&env, "TST"),
+            &0i128,
+            &None,
+            &false,
+            &false,
+            &None,
+            &Some(String::from_str(&env, "javascript:alert(1)")),
+        );
+
+        assert_eq!(result, Err(Ok(TokenError::InvalidContractUri.into())));
     }
     // ── Upgrade tests ───────────────────────────────────────────────────
 

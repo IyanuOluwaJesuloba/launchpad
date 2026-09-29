@@ -17,6 +17,7 @@ import VestingProgress from "./VestingProgress";
 import TransactionHistory from "./TransactionHistory";
 import SupplyBreakdownChart from "@/components/charts/SupplyBreakdownChart";
 import { ExplorerLink } from "@/components/ui/ExplorerLink";
+import { SafeExternalLink } from "@/components/ui/SafeExternalLink";
 import ActivityFeed from "./ActivityFeed";
 import { TransferPanel } from "./components/TransferPanel";
 import { UserPanel } from "./components/UserPanel";
@@ -219,14 +220,13 @@ export default function TokenDashboard({ contractId }: { contractId: string }) {
                 URI
               </span>
             </div>
-            <a
+            <SafeExternalLink
               href={tokenInfo.contractUri}
-              target="_blank"
-              rel="noopener noreferrer"
               className="truncate text-lg font-semibold text-stellar-400 hover:text-stellar-300 transition-colors"
+              blockedClassName="truncate text-lg font-semibold text-gray-500 cursor-not-allowed"
             >
               {tokenInfo.contractUri}
-            </a>
+            </SafeExternalLink>
           </div>
         </section>
       )}

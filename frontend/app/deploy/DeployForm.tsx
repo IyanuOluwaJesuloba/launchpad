@@ -243,6 +243,43 @@ export default function DeployForm() {
     setCurrentStep((prev) => Math.max(prev - 1, 1));
   };
 
+  /**
+   * Client-side bookkeeping once a deploy transaction has been submitted:
+   * pending metadata, the per-wallet cooldown, and the user's deployment list.
+   */
+  const recordDeployment = (data: DeployFormData, contractId: string) => {
+    // Save metadata client-side
+    try {
+      savePendingMetadata(data.symbol, {
+        description: data.description,
+        logoUrl: data.logoUrl,
+        website: data.website,
+        twitter: data.twitter,
+        discord: data.discord,
+      });
+    } catch {
+      // Ignore metadata save errors
+    }
+
+    // Set client-side deploy cooldown (per-wallet)
+    try {
+      const key = `soropad:lastDeploy:${publicKey ?? "anonymous"}`;
+      localStorage.setItem(key, Date.now().toString());
+
+      // Track deployment for user dashboard
+      if (publicKey) {
+        trackDeployment(publicKey, {
+          contractId,
+          name: data.name,
+          symbol: data.symbol,
+          network: networkConfig.network,
+        });
+      }
+    } catch {
+      // Ignore tracking errors
+    }
+  };
+
   const onSubmit = async (data: DeployFormData) => {
     setIsDeploying(true);
     setAnnouncement("Deploying token transaction.");
@@ -277,36 +314,7 @@ export default function DeployForm() {
         `Token deployed successfully. Transaction hash ${result.transactionHash}.`,
       );
 
-      // Save metadata client-side
-      try {
-        savePendingMetadata(data.symbol, {
-          description: data.description,
-          logoUrl: data.logoUrl,
-          website: data.website,
-          twitter: data.twitter,
-          discord: data.discord,
-        });
-      } catch {
-        // Ignore metadata save errors
-      }
-
-      // Set client-side deploy cooldown (per-wallet)
-      try {
-        const key = `soropad:lastDeploy:${publicKey ?? "anonymous"}`;
-        localStorage.setItem(key, Date.now().toString());
-
-        // Track deployment for user dashboard
-        if (publicKey) {
-          trackDeployment(publicKey, {
-            contractId: result.contractId,
-            name: data.name,
-            symbol: data.symbol,
-            network: networkConfig.network,
-          });
-        }
-      } catch {
-        // Ignore tracking errors
-      }
+      recordDeployment(data, result.contractId);
 
       toast.show({
         title: "Token deployed successfully",
@@ -319,6 +327,31 @@ export default function DeployForm() {
     } catch (err) {
       // Handle deployment errors
       const error = err as DeployTokenError;
+
+      // Polling ran out but the address is already known from simulation,
+      // so it is authoritative whether or not the transaction has landed:
+      // send the user to the dashboard (which shows zero supply if it did
+      // not) instead of an error state they cannot act on.
+      if (error.type === "timeout" && error.contractId) {
+        recordDeployment(data, error.contractId);
+        setPreflightResult({
+          isLoading: false,
+          success: false,
+          errors: [],
+          warnings: [error.message],
+        });
+        setAnnouncement(`Deployment not yet confirmed. ${error.message}`);
+        toast.show({
+          title: "Deployment submitted, confirmation pending",
+          message: error.message,
+          variant: "warning",
+          duration: 12_000,
+          txHash: error.transactionHash,
+        });
+        router.push(`/dashboard/${error.contractId}`);
+        return;
+      }
+
       const errorDetails: string[] = [];
 
       if (error.type === "validation") {

@@ -9,17 +9,25 @@ import { verifyFactory } from "@/lib/stellar";
 import { Client as TokenClient } from "@/lib/bindings/token/src/index";
 import type { AssembledTransaction } from "@stellar/stellar-sdk/contract";
 
-// Generate random bytes for salt
+/**
+ * Cryptographically secure random bytes for the deploy salt.
+ *
+ * The salt determines the token's address, so a predictable salt lets anyone
+ * precompute that address and interact with it before the issuer does. There
+ * is deliberately no non-cryptographic fallback: if Web Crypto is missing,
+ * something is wrong with the environment and the deploy is refused.
+ */
 function randomBytes(length: number): Buffer {
-  const array = new Uint8Array(length);
-  if (typeof window !== "undefined" && window.crypto) {
-    window.crypto.getRandomValues(array);
-  } else {
-    // Fallback for Node.js environment (shouldn't happen in client component)
-    for (let i = 0; i < length; i++) {
-      array[i] = Math.floor(Math.random() * 256);
-    }
+  const webCrypto = globalThis.crypto;
+  if (!webCrypto || typeof webCrypto.getRandomValues !== "function") {
+    throw {
+      message:
+        "Secure random number generation (crypto.getRandomValues) is unavailable in this browser, so a deploy salt cannot be generated safely. Please use an up-to-date browser and try again.",
+      type: "validation",
+    } as DeployTokenError;
   }
+  const array = new Uint8Array(length);
+  webCrypto.getRandomValues(array);
   return Buffer.from(array);
 }
 
@@ -71,7 +79,15 @@ export interface DeployTokenResult {
 
 export interface DeployTokenError {
   message: string;
-  type: "validation" | "simulation" | "wallet" | "broadcast" | "timeout";
+  type: "validation" | "simulation" | "wallet" | "broadcast" | "timeout" | "network";
+  /**
+   * Set on `timeout` errors when the token address is already known. It comes
+   * from simulation, so it is authoritative whether or not the transaction
+   * has landed yet, and callers can route to the token's dashboard.
+   */
+  contractId?: string;
+  /** Hash of the broadcast transaction, set on `timeout` errors. */
+  transactionHash?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -181,8 +197,62 @@ interface DeployContext {
   passphrase: string;
 }
 
-/** Broadcast a signed XDR and poll until the transaction settles. */
-async function sendAndPoll(signedXdr: string, ctx: DeployContext): Promise<string> {
+/**
+ * Load the deployer's account, turning "not found" into an actionable
+ * validation error. A freshly created or unfunded address has no ledger
+ * entry until its first transaction, which is a funding problem rather than
+ * a deploy failure.
+ */
+async function loadSourceAccount(
+  rpc: StellarSdk.rpc.Server,
+  publicKey: string,
+): Promise<StellarSdk.Account> {
+  try {
+    return await rpc.getAccount(publicKey);
+  } catch (err) {
+    const status = (err as { response?: { status?: number } } | null)?.response?.status;
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    // stellar-sdk reports *any* getLedgerEntry failure, transport errors
+    // included, as "Account not found", so only blame the account once the
+    // RPC has been shown to answer.
+    const notFound =
+      (status === 404 || /not found/i.test(errorMsg)) &&
+      (await rpc.getLatestLedger().then(
+        () => true,
+        () => false,
+      ));
+    if (notFound) {
+      throw {
+        message: `Account ${publicKey} has no transactions on this network yet. Fund it with XLM (on testnet, use Friendbot) and try again.`,
+        type: "validation",
+      } as DeployTokenError;
+    }
+    throw {
+      message: `Could not load account ${publicKey} from the Soroban RPC: ${errorMsg}`,
+      type: "network",
+    } as DeployTokenError;
+  }
+}
+
+const POLL_INTERVAL_MS = 2_000;
+/**
+ * How long to wait for a broadcast transaction to settle. A mainnet
+ * transaction in a busy ledger can legitimately take longer than a minute.
+ */
+const POLL_BUDGET_MS = 180_000;
+
+/**
+ * Broadcast a signed XDR and poll until the transaction settles.
+ *
+ * `contractId`, when the caller already knows it, is attached to the timeout
+ * error so the UI can still send the user to the token rather than asking
+ * them to look it up by transaction hash.
+ */
+async function sendAndPoll(
+  signedXdr: string,
+  ctx: DeployContext,
+  contractId?: string,
+): Promise<string> {
   const rpc = new StellarSdk.rpc.Server(ctx.rpcUrl);
   const signedTx = StellarSdk.TransactionBuilder.fromXDR(
     signedXdr,
@@ -207,18 +277,22 @@ async function sendAndPoll(signedXdr: string, ctx: DeployContext): Promise<strin
   }
 
   const txHash = sendResult.hash;
-  const maxAttempts = 30;
-  const pollInterval = 2000;
+  const maxAttempts = Math.ceil(POLL_BUDGET_MS / POLL_INTERVAL_MS);
+  // Transport error from the most recent poll, if it failed. Lets a timeout
+  // say "the RPC is unreachable" instead of "the transaction has not settled".
+  let lastPollError: unknown = null;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    await new Promise((resolve) => setTimeout(resolve, pollInterval));
+    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
 
     let getResult: StellarSdk.rpc.Api.GetTransactionResponse;
     try {
       getResult = await rpc.getTransaction(txHash);
-    } catch {
+    } catch (err) {
+      lastPollError = err;
       continue;
     }
+    lastPollError = null;
 
     if (getResult.status === "SUCCESS") {
       return txHash;
@@ -231,9 +305,20 @@ async function sendAndPoll(signedXdr: string, ctx: DeployContext): Promise<strin
     }
   }
 
+  const tokenNote = contractId ? ` The token address is ${contractId}.` : "";
+  const message = lastPollError
+    ? `Could not reach the Soroban RPC to confirm transaction ${txHash} (${
+        lastPollError instanceof Error ? lastPollError.message : String(lastPollError)
+      }). The transaction may still have succeeded.${tokenNote}`
+    : `Transaction ${txHash} has not settled after ${
+        POLL_BUDGET_MS / 1000
+      } seconds. It may still be included in a later ledger.${tokenNote}`;
+
   throw {
-    message: `Transaction polling timeout. Hash: ${txHash}. Check the transaction status manually on a Stellar explorer.`,
+    message,
     type: "timeout",
+    contractId,
+    transactionHash: txHash,
   } as DeployTokenError;
 }
 
@@ -349,7 +434,7 @@ async function deployViaFactory(
   const contract = new StellarSdk.Contract(factoryAddress);
   const salt = randomBytes(32);
 
-  const account = await rpc.getAccount(ctx.publicKey);
+  const account = await loadSourceAccount(rpc, ctx.publicKey);
 
   const tx = new StellarSdk.TransactionBuilder(account, {
     fee: StellarSdk.BASE_FEE,
@@ -386,7 +471,7 @@ async function deployViaFactory(
 
   const assembled = StellarSdk.rpc.assembleTransaction(tx, sim).build();
   const signedXdr = await signPrepared(assembled, ctx);
-  const transactionHash = await sendAndPoll(signedXdr, ctx);
+  const transactionHash = await sendAndPoll(signedXdr, ctx, contractId);
 
   return { contractId, transactionHash };
 }
@@ -409,9 +494,9 @@ async function deployLegacy(
   const rpc = new StellarSdk.rpc.Server(ctx.rpcUrl);
 
   // ── Step 1: Deploy the raw contract ─────────────────────────────────
-  const sourceAccount = await rpc.getAccount(ctx.publicKey);
-  const wasmHashBuffer = Buffer.from(tokenWasmHash, "hex");
   const salt = randomBytes(32);
+  const sourceAccount = await loadSourceAccount(rpc, ctx.publicKey);
+  const wasmHashBuffer = Buffer.from(tokenWasmHash, "hex");
 
   const deployOp = StellarSdk.Operation.createCustomContract({
     address: new StellarSdk.Address(ctx.publicKey),
@@ -505,7 +590,7 @@ async function deployLegacy(
   }
 
   const signedInitXdr = await signPrepared(initTx.built, ctx);
-  const initHash = await sendAndPoll(signedInitXdr, ctx);
+  const initHash = await sendAndPoll(signedInitXdr, ctx, contractId);
 
   return { contractId, transactionHash: initHash };
 }
