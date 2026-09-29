@@ -40,8 +40,26 @@ export function useSoroban() {
   );
 
   const fetchVestingSchedule = useCallback(
+    (vestingContractId: string, recipient: string, scheduleIndex?: number) =>
+      stellar.fetchVestingSchedule(vestingContractId, recipient, networkConfig, scheduleIndex),
+    [networkConfig],
+  );
+
+  const fetchVestedAmount = useCallback(
+    (vestingContractId: string, recipient: string, scheduleIndex?: number) =>
+      stellar.fetchVestedAmount(vestingContractId, recipient, networkConfig, scheduleIndex),
+    [networkConfig],
+  );
+
+  const fetchVestingScheduleCount = useCallback(
     (vestingContractId: string, recipient: string) =>
-      stellar.fetchVestingSchedule(vestingContractId, recipient, networkConfig),
+      stellar.fetchVestingScheduleCount(vestingContractId, recipient, networkConfig),
+    [networkConfig],
+  );
+
+  const fetchAllVestingSchedules = useCallback(
+    (vestingContractId: string, recipient: string) =>
+      stellar.fetchAllVestingSchedules(vestingContractId, recipient, networkConfig),
     [networkConfig],
   );
 
@@ -83,6 +101,11 @@ export function useSoroban() {
     (signedXdr: string) => stellar.submitTransaction(signedXdr, networkConfig),
     [networkConfig],
   );
+
+  const getContractWasmHash = useCallback(
+    (contractId: string) => stellar.getContractWasmHash(contractId, networkConfig),
+    [networkConfig],
+  );
   return useMemo(
     () => ({
       fetchTokenInfo,
@@ -91,12 +114,16 @@ export function useSoroban() {
       fetchTopHolders,
       fetchCurrentLedger,
       fetchVestingSchedule,
+      fetchVestedAmount,
+      fetchVestingScheduleCount,
+      fetchAllVestingSchedules,
       fetchSupplyBreakdown,
       fetchAccountBalances,
       fetchTransactionHistory,
       fetchAccountOperations,
       buildBurnTransaction,
       submitTransaction,
+      getContractWasmHash,
       networkConfig,
       // Pass through formatting helpers which don't need config
       formatTokenAmount: stellar.formatTokenAmount,
@@ -109,12 +136,16 @@ export function useSoroban() {
       fetchTopHolders,
       fetchCurrentLedger,
       fetchVestingSchedule,
+      fetchVestedAmount,
+      fetchVestingScheduleCount,
+      fetchAllVestingSchedules,
       fetchSupplyBreakdown,
       fetchAccountBalances,
       fetchTransactionHistory,
       fetchAccountOperations,
       buildBurnTransaction,
       submitTransaction,
+      getContractWasmHash,
       networkConfig,
     ],
   );

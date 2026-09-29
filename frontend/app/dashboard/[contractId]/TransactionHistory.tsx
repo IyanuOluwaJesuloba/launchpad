@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { Download, FileText, Table as TableIcon, Loader2, AlertCircle, ChevronDown } from "lucide-react";
+import { Download, FileText, Loader2, AlertCircle, ChevronDown, Info } from "lucide-react";
 import {
     formatTokenAmount,
     truncateAddress,
@@ -10,7 +10,6 @@ import {
 import { useSoroban } from "@/hooks/useSoroban";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import * as XLSX from "xlsx";
 
 interface TransactionHistoryProps {
     contractId: string;
@@ -29,6 +28,7 @@ export default function TransactionHistory({
     const [loadingMore, setLoadingMore] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [showExportOptions, setShowExportOptions] = useState(false);
+    const [windowStartLedger, setWindowStartLedger] = useState<number | null>(null);
 
     const { fetchTransactionHistory } = useSoroban();
 
@@ -36,9 +36,10 @@ export default function TransactionHistory({
         setLoading(true);
         setError(null);
         try {
-            const { items, nextCursor: cursor } = await fetchTransactionHistory(contractId);
+            const { items, nextCursor: cursor, windowStartLedger: startLedger } = await fetchTransactionHistory(contractId);
             setHistory(items);
             setNextCursor(cursor);
+            setWindowStartLedger(startLedger ?? null);
         } catch (err) {
             console.error("Failed to load history:", err);
             setError("Failed to load transaction history. Please try again.");
@@ -51,9 +52,10 @@ export default function TransactionHistory({
         if (!nextCursor || loadingMore) return;
         setLoadingMore(true);
         try {
-            const { items, nextCursor: cursor } = await fetchTransactionHistory(contractId, { cursor: nextCursor });
+            const { items, nextCursor: cursor, windowStartLedger: startLedger } = await fetchTransactionHistory(contractId, { cursor: nextCursor });
             setHistory((prev) => [...prev, ...items]);
             setNextCursor(cursor);
+            if (startLedger !== undefined) setWindowStartLedger(startLedger);
         } catch (err) {
             console.error("Failed to load more history:", err);
         } finally {
@@ -83,6 +85,17 @@ export default function TransactionHistory({
             totalRecipients: recipients.size,
         };
     }, [history, decimals]);
+
+    const truncatedWindowNotice = useMemo(() => {
+        if (windowStartLedger === null || history.length === 0) return null;
+        const earliest = history.reduce(
+            (min, tx) => (tx.ledger < min ? tx.ledger : min),
+            history[0].ledger
+        );
+        const ledgers = Math.max(0, earliest - windowStartLedger);
+        const approxMinutes = Math.round((ledgers * 5) / 60);
+        return `Showing the last ~${approxMinutes} minutes (from ledger ${windowStartLedger.toLocaleString()}). Full history requires the indexer.`;
+    }, [windowStartLedger, history]);
 
     // Prepare common export data
     const prepareExportData = () => {
@@ -137,41 +150,6 @@ export default function TransactionHistory({
         });
 
         doc.save(`${symbol}_transaction_history.pdf`);
-        setShowExportOptions(false);
-    };
-
-    const exportExcel = () => {
-        const exportData = prepareExportData();
-
-        const worksheetData = [
-            ["Token Transaction Report", "", "", "", "", "", ""],
-            ["Symbol", symbol, "", "", "", "", ""],
-            ["Contract ID", contractId, "", "", "", "", ""],
-            ["Generated", new Date().toLocaleString(), "", "", "", "", ""],
-            ["", "", "", "", "", "", ""],
-            ["Summary Statistics", "", "", "", "", "", ""],
-            ["Total Minted", `${stats.totalMinted} ${symbol}`, "", "", "", "", ""],
-            ["Total Recipients", stats.totalRecipients, "", "", "", "", ""],
-            ["", "", "", "", "", "", ""],
-            ["Type", "From", "To", "Amount", "Ledger", "Transaction ID", "Timestamp"]
-        ];
-
-        exportData.forEach(tx => {
-            worksheetData.push([
-                tx.type,
-                tx.from,
-                tx.to,
-                `${tx.amount} ${symbol}`,
-                tx.ledger,
-                tx.transactionId,
-                tx.timestamp
-            ]);
-        });
-
-        const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, "History");
-        XLSX.writeFile(workbook, `${symbol}_transaction_history.xlsx`);
         setShowExportOptions(false);
     };
 
@@ -268,13 +246,6 @@ export default function TransactionHistory({
                                 Export as PDF
                             </button>
                             <button
-                                onClick={exportExcel}
-                                className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-gray-300 transition-colors hover:bg-white/5 hover:text-white"
-                            >
-                                <TableIcon className="h-4 w-4 text-green-400" />
-                                Export as Excel
-                            </button>
-                            <button
                                 onClick={exportCSV}
                                 className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-gray-300 transition-colors hover:bg-white/5 hover:text-white"
                             >
@@ -286,6 +257,13 @@ export default function TransactionHistory({
                 </div>
             </div>
 
+            {truncatedWindowNotice && (
+                <div className="glass-card flex items-start gap-3 border border-amber-500/20 bg-amber-500/5 p-4 text-sm text-amber-300">
+                    <Info className="mt-0.5 h-4 w-4 shrink-0" />
+                    <p>{truncatedWindowNotice}</p>
+                </div>
+            )}
+
             {error && (
                 <div className="glass-card flex items-center gap-3 p-4 text-sm text-red-400">
                     <AlertCircle className="h-4 w-4" />
@@ -296,7 +274,7 @@ export default function TransactionHistory({
             {history.length === 0 ? (
                 <div className="glass-card flex flex-col items-center justify-center p-12 text-center text-gray-500">
                     <p>No transactions found for this token yet.</p>
-                    <p className="mt-1 text-xs">Events may take a few moments to appear after a transaction.</p>
+                    <p className="mt-1 text-xs">Events may take a few moments to appear after a transaction. Without the indexer, only the most recent ~83 minutes are shown.</p>
                 </div>
             ) : (
                 <div className="glass-card overflow-hidden">
@@ -372,6 +350,10 @@ export default function TransactionHistory({
                         {loadingMore ? "Loading..." : "Load More"}
                     </button>
                 </div>
+            )}
+
+            {truncatedWindowNotice && (
+                <p className="text-center text-xs text-gray-500">{truncatedWindowNotice}</p>
             )}
         </div>
     );

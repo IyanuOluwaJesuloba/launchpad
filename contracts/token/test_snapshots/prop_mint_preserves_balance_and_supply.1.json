@@ -4,7 +4,49 @@
     "nonce": 0
   },
   "auth": [
-    [],
+    [
+      [
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+        {
+          "function": {
+            "contract_fn": {
+              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+              "function_name": "initialize",
+              "args": [
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                },
+                {
+                  "u32": 7
+                },
+                {
+                  "string": "FuzzToken"
+                },
+                {
+                  "string": "FZT"
+                },
+                {
+                  "i128": {
+                    "hi": 0,
+                    "lo": 10000000000000
+                  }
+                },
+                "void",
+                {
+                  "bool": false
+                },
+                {
+                  "bool": false
+                },
+                "void",
+                "void"
+              ]
+            }
+          },
+          "sub_invocations": []
+        }
+      ]
+    ],
     [],
     [],
     [
@@ -22,7 +64,7 @@
                 {
                   "i128": {
                     "hi": 0,
-                    "lo": 399197203756
+                    "lo": 637984983684
                   }
                 }
               ]
@@ -136,14 +178,14 @@
                 "val": {
                   "i128": {
                     "hi": 0,
-                    "lo": 399197203756
+                    "lo": 637984983684
                   }
                 }
               }
             },
             "ext": "v0"
           },
-          104832
+          6307200
         ]
       ],
       [
@@ -221,6 +263,18 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "Initialized"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "bool": true
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "Name"
                             }
                           ]
@@ -267,7 +321,7 @@
                         "val": {
                           "i128": {
                             "hi": 0,
-                            "lo": 10399197203756
+                            "lo": 10637984983684
                           }
                         }
                       }
@@ -303,6 +357,39 @@
                 "key": {
                   "ledger_key_nonce": {
                     "nonce": 801925984706572462
+                  }
+                },
+                "durability": "temporary",
+                "val": "void"
+              }
+            },
+            "ext": "v0"
+          },
+          6311999
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+            "key": {
+              "ledger_key_nonce": {
+                "nonce": 5541220902715666415
+              }
+            },
+            "durability": "temporary"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+                "key": {
+                  "ledger_key_nonce": {
+                    "nonce": 5541220902715666415
                   }
                 },
                 "durability": "temporary",
@@ -383,6 +470,7 @@
                 {
                   "bool": false
                 },
+                "void",
                 "void"
               ]
             }
@@ -401,6 +489,9 @@
             "topics": [
               {
                 "symbol": "mint"
+              },
+              {
+                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
               },
               {
                 "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
@@ -586,7 +677,7 @@
                 {
                   "i128": {
                     "hi": 0,
-                    "lo": 399197203756
+                    "lo": 637984983684
                   }
                 }
               ]
@@ -608,13 +699,16 @@
                 "symbol": "mint"
               },
               {
+                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+              },
+              {
                 "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
               }
             ],
             "data": {
               "i128": {
                 "hi": 0,
-                "lo": 399197203756
+                "lo": 637984983684
               }
             }
           }
@@ -687,7 +781,7 @@
             "data": {
               "i128": {
                 "hi": 0,
-                "lo": 399197203756
+                "lo": 637984983684
               }
             }
           }
@@ -737,7 +831,7 @@
             "data": {
               "i128": {
                 "hi": 0,
-                "lo": 10399197203756
+                "lo": 10637984983684
               }
             }
           }
@@ -841,7 +935,7 @@
             "data": {
               "i128": {
                 "hi": 0,
-                "lo": 399197203756
+                "lo": 637984983684
               }
             }
           }
@@ -891,7 +985,7 @@
             "data": {
               "i128": {
                 "hi": 0,
-                "lo": 10399197203756
+                "lo": 10637984983684
               }
             }
           }
@@ -995,7 +1089,7 @@
             "data": {
               "i128": {
                 "hi": 0,
-                "lo": 399197203756
+                "lo": 637984983684
               }
             }
           }

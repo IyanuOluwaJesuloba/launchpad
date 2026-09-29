@@ -4,6 +4,14 @@ Thanks for your interest! This project is open to contributors via the [Stellar 
 
 ---
 
+## Documentation Structure
+
+- **Feature Guides**: See `docs/` for detailed feature documentation
+- **Issue Tracking**: Active issues are tracked in the `waveN.md` files in the repo root
+- **Architecture**: Refer to `PRD.md` for project requirements and design decisions
+
+---
+
 ## Local Setup
 
 ```bash
@@ -144,6 +152,10 @@ npm test
 # E2E tests (requires testnet funded keypair in .env.test)
 npm run test:e2e
 ```
+
+### Test snapshot policy
+
+The `contracts/*/test_snapshots/` trees (token, vesting, factory, airdrop) are **tracked**, not ignored. A snapshot diff is the review artefact for any contract behaviour change: if `cargo test` rewrites snapshots, commit them and explain the change in the PR. Do not add `test_snapshots/` to `.gitignore`. Build artefacts such as `*.tsbuildinfo` and `*.stackdump` stay ignored.
 
 ---
 

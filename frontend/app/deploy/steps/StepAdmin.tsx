@@ -143,6 +143,11 @@ export const StepAdmin = ({ register, errors, control }: StepProps) => {
                     error={errors.adminAddress?.message as string}
                 />
             ) : (
+                // react-hook-form's `useController` controlled-field props
+                // (value/onChange/onBlur/name/ref) are read onto the input during
+                // render. This is the documented RHF controlled-field pattern; the
+                // compiler cannot model RHF's internal ref handling.
+                /* eslint-disable react-hooks/refs -- RHF controlled field pattern */
                 <Input
                     label="Admin Address or DAO Contract"
                     placeholder="e.g. G... or C..."
@@ -153,6 +158,7 @@ export const StepAdmin = ({ register, errors, control }: StepProps) => {
                     ref={adminAddressField.ref}
                     error={errors.adminAddress?.message as string}
                 />
+                /* eslint-enable react-hooks/refs */
             )}
 
             <div className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-xl">
@@ -189,7 +195,7 @@ export const StepAdmin = ({ register, errors, control }: StepProps) => {
                         <Toggle
                             id="authorizationRequired"
                             label="Authorization Required"
-                            description="Recipients must be explicitly authorized by the admin before they can receive or hold tokens."
+                            description="Recipients must be explicitly authorized by the admin before they can receive or hold tokens. The admin can turn this on or off again later."
                             checked={!!authRequired}
                             onChange={handleAuthRequiredChange}
                         />
@@ -210,6 +216,12 @@ export const StepAdmin = ({ register, errors, control }: StepProps) => {
                                 Enable &quot;Authorization Required&quot; to use &quot;Authorization Revocable&quot;.
                             </p>
                         )}
+
+                        <p className="text-xs text-gray-600 italic mt-1">
+                            Leaving &quot;Authorization Revocable&quot; off is permanent — there is no way to
+                            turn it on after deploy. Turning it on now keeps a one-way door open: the
+                            admin can later give up that power for good, but never regain it.
+                        </p>
 
                         <div className="border-t border-white/5" />
 

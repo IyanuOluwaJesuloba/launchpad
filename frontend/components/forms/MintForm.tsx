@@ -10,6 +10,8 @@ import { NumericInput } from "@/components/ui/NumericInput";
 import { PreflightCheckDisplay } from "@/components/ui/PreflightCheck";
 import { useTransactionSimulator } from "@/hooks/useTransactionSimulator";
 import { Rocket } from "lucide-react";
+import { useToast } from "@/app/providers/ToastProvider";
+import { toBaseUnits } from "@/lib/utils";
 
 const mintSchema = z.object({
   tokenContractId: z
@@ -30,11 +32,13 @@ type MintFormData = z.infer<typeof mintSchema>;
 
 interface MintFormProps {
   adminAddress: string;
+  tokenDecimals: number;
   onSuccess?: (txHash: string) => void;
 }
 
-export function MintForm({ adminAddress, onSuccess }: MintFormProps) {
+export function MintForm({ adminAddress, tokenDecimals, onSuccess }: MintFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const toast = useToast();
   const [preflightResult, setPreflightResult] = useState<{
     isLoading: boolean;
     success: boolean;
@@ -73,7 +77,7 @@ export function MintForm({ adminAddress, onSuccess }: MintFormProps) {
       const result = await simulator.checkMint(
         formData.tokenContractId,
         formData.recipientAddress,
-        BigInt(Math.floor(parseFloat(formData.amount) * 1e7)),
+        toBaseUnits(formData.amount, tokenDecimals),
         adminAddress,
       );
 
@@ -94,15 +98,18 @@ export function MintForm({ adminAddress, onSuccess }: MintFormProps) {
     }
   };
 
-  const onSubmit = async (data: MintFormData) => {
+  const onSubmit = async (_data: MintFormData) => {
     if (!preflightResult?.success) {
-      alert("Please run pre-flight check first");
+      toast.show({
+        title: "Pre-flight Check Required",
+        message: "Run the pre-flight check first",
+        variant: "warning",
+      });
       return;
     }
 
     setIsSubmitting(true);
     try {
-      console.log("Submitting mint transaction:", data);
       onSuccess?.("0x...");
     } catch (error) {
       console.error("Failed to submit transaction:", error);

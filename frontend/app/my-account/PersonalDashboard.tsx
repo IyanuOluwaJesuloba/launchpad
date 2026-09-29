@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { useTranslations } from "next-intl";
 import {
   AlertCircle,
   Flame,
@@ -39,9 +40,11 @@ import { EmptyState } from "@/components/ui/EmptyState";
 // ---------------------------------------------------------------------------
 
 export default function PersonalDashboard() {
+  const t = useTranslations("myAccount");
   const { connected, publicKey, connect, signTransaction } = useWallet();
   const {
     fetchVestingSchedule,
+    fetchAllVestingSchedules,
     fetchCurrentLedger,
     fetchAccountBalances,
     fetchAccountOperations,
@@ -58,8 +61,7 @@ export default function PersonalDashboard() {
 
   // Vesting
   const [vestingContractId, setVestingContractId] = useState("");
-  const [vestingSchedule, setVestingSchedule] =
-    useState<VestingScheduleInfo | null>(null);
+  const [vestingSchedules, setVestingSchedules] = useState<VestingScheduleInfo[]>([]);
   const [vestingLoading, setVestingLoading] = useState(false);
   const [vestingError, setVestingError] = useState<string | null>(null);
   const [currentLedger, setCurrentLedger] = useState(0);
@@ -109,7 +111,7 @@ export default function PersonalDashboard() {
       setImportContractId("");
       loadTrackedTokens();
     } catch {
-      setImportError("Could not find token. Check the contract ID.");
+      setImportError(t("importError"));
     } finally {
       setImportLoading(false);
     }
@@ -197,30 +199,37 @@ export default function PersonalDashboard() {
     [publicKey, fetchAccountOperations],
   );
 
-  // Load vesting schedule by contract ID
+  // Load all vesting schedules (uses get_all_schedules — single call, not N+1)
   const doVestingLookup = useCallback(async (contractId: string) => {
     if (!publicKey || !contractId.trim()) return;
     setVestingContractId(contractId);
     setVestingLoading(true);
     setVestingError(null);
-    setVestingSchedule(null);
+    setVestingSchedules([]);
     try {
-      const [schedule, ledger] = await Promise.all([
-        fetchVestingSchedule(contractId.trim(), publicKey),
+      const [allSchedules, ledger] = await Promise.all([
+        fetchAllVestingSchedules(contractId.trim(), publicKey),
         fetchCurrentLedger(),
       ]);
-      setVestingSchedule(schedule);
+
+      if (allSchedules.length === 0) {
+        setVestingError("No vesting schedule found for your wallet on this contract.");
+        setVestingLoading(false);
+        return;
+      }
+
+      setVestingSchedules(allSchedules);
       setCurrentLedger(ledger);
     } catch (err) {
       setVestingError(
         err instanceof Error
           ? err.message
-          : "Failed to fetch vesting schedule. Check the contract ID.",
+          : "Failed to fetch vesting schedules. Check the contract ID.",
       );
     } finally {
       setVestingLoading(false);
     }
-  }, [publicKey, fetchVestingSchedule, fetchCurrentLedger]);
+  }, [publicKey, fetchAllVestingSchedules, fetchCurrentLedger]);
 
   const lookupVesting = useCallback(async () => {
     await doVestingLookup(vestingContractId);
@@ -268,7 +277,7 @@ export default function PersonalDashboard() {
         onLookup={lookupVesting}
         loading={vestingLoading}
         error={vestingError}
-        schedule={vestingSchedule}
+        schedules={vestingSchedules}
         currentLedger={currentLedger}
       />
 

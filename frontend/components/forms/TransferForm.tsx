@@ -10,6 +10,8 @@ import { NumericInput } from "@/components/ui/NumericInput";
 import { PreflightCheckDisplay } from "@/components/ui/PreflightCheck";
 import { useTransactionSimulator } from "@/hooks/useTransactionSimulator";
 import { Send } from "lucide-react";
+import { useToast } from "@/app/providers/ToastProvider";
+import { toBaseUnits } from "@/lib/utils";
 
 const transferSchema = z.object({
   tokenContractId: z.string().regex(/^C[A-Z0-9]{55}$/, "Invalid token contract ID"),
@@ -23,11 +25,13 @@ type TransferFormData = z.infer<typeof transferSchema>;
 
 interface TransferFormProps {
   senderAddress: string;
+  tokenDecimals: number;
   onSuccess?: (txHash: string) => void;
 }
 
-export function TransferForm({ senderAddress, onSuccess }: TransferFormProps) {
+export function TransferForm({ senderAddress, tokenDecimals, onSuccess }: TransferFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const toast = useToast();
   const [preflightResult, setPreflightResult] = useState<{
     isLoading: boolean;
     success: boolean;
@@ -62,7 +66,7 @@ export function TransferForm({ senderAddress, onSuccess }: TransferFormProps) {
         formData.tokenContractId,
         senderAddress,
         formData.toAddress,
-        BigInt(Math.floor(parseFloat(formData.amount) * 1e7)),
+        toBaseUnits(formData.amount, tokenDecimals),
       );
 
       setPreflightResult({
@@ -82,15 +86,18 @@ export function TransferForm({ senderAddress, onSuccess }: TransferFormProps) {
     }
   };
 
-  const onSubmit = async (data: TransferFormData) => {
+  const onSubmit = async (_data: TransferFormData) => {
     if (!preflightResult?.success) {
-      alert("Please run pre-flight check first");
+      toast.show({
+        title: "Pre-flight Check Required",
+        message: "Run the pre-flight check first",
+        variant: "warning",
+      });
       return;
     }
 
     setIsSubmitting(true);
     try {
-      console.log("Submitting transfer transaction:", data);
       onSuccess?.("0x...");
     } catch (error) {
       console.error("Failed to submit transaction:", error);

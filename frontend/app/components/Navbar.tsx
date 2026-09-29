@@ -20,8 +20,10 @@ export function Navbar() {
   const accessibility = useTranslations("accessibility");
   const navLinks = [
     { href: "/deploy", label: t("deploy") },
+    { href: "/explore", label: t("explore") },
     { href: "/dashboard", label: t("dashboard") },
     { href: "/dashboard/allowances", label: t("allowances") },
+    { href: "/airdrop", label: t("airdrop") },
     { href: "/my-account", label: t("myAccount") },
   ] as const;
 

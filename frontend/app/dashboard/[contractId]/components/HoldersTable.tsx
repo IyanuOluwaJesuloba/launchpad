@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
-import { ArrowUpDown } from "lucide-react";
+import { useState, useMemo } from "react";
+import { useTranslations } from "next-intl";
+import { ArrowUpDown, Snowflake } from "lucide-react";
 import { type TokenHolder } from "@/lib/stellar";
 import { ExplorerLink } from "@/components/ui/ExplorerLink";
 
@@ -30,10 +31,14 @@ export function exportHoldersCsv(
 export function HoldersTable({
   holders,
   emptyMessage = "No holder data available.",
+  frozenAddresses,
 }: {
   holders: TokenHolder[];
   emptyMessage?: string;
+  frozenAddresses?: Set<string>;
 }) {
+  const t = useTranslations("dashboard.holders");
+  const showStatus = frozenAddresses !== undefined;
   const [sortField, setSortField] = useState<SortField>("balance");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [searchQuery, setSearchQuery] = useState("");
@@ -47,10 +52,9 @@ export function HoldersTable({
       setSortField(field);
       setSortDir("desc");
     }
-    setCurrentPage(1); // Reset to first page when sorting changes
+    setCurrentPage(1);
   };
 
-  // Filter holders based on search query
   const filtered = useMemo(() => {
     if (!searchQuery.trim()) return holders;
     const query = searchQuery.toLowerCase();
@@ -59,7 +63,6 @@ export function HoldersTable({
     );
   }, [holders, searchQuery]);
 
-  // Sort filtered holders
   const sorted = useMemo(() => {
     return [...filtered].sort((a, b) => {
       let cmp = 0;
@@ -78,23 +81,17 @@ export function HoldersTable({
     });
   }, [filtered, sortField, sortDir]);
 
-  // Calculate pagination
   const totalPages = Math.ceil(sorted.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
   const paginatedHolders = sorted.slice(startIndex, endIndex);
-
-  // Reset to page 1 when search changes
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchQuery]);
 
   if (holders.length === 0) {
     return (
       <div className="glass-card p-8 text-center text-gray-500">
         <p>{emptyMessage}</p>
         <p className="mt-1 text-xs">
-          Soroban-native tokens require an indexer for full holder enumeration.
+          {t("sorobanNote")}
         </p>
       </div>
     );
@@ -105,17 +102,19 @@ export function HoldersTable({
 
   return (
     <div className="space-y-4">
-      {/* Search bar and Export */}
       <div className="glass-card p-4">
         <div className="flex items-center gap-3">
           <div className="relative flex-1">
             <input
               type="text"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by wallet address..."
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
+              }}
+              placeholder={t("searchPlaceholder")}
               className="w-full rounded-lg border border-white/10 bg-void-800 px-4 py-2 pl-10 text-sm text-white placeholder-gray-500 outline-none focus:border-stellar-500 focus:ring-1 focus:ring-stellar-500"
-              aria-label="Search holders by address"
+              aria-label={t("searchAria")}
             />
             <svg
               className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500"
@@ -141,8 +140,8 @@ export function HoldersTable({
             className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-gray-300 transition-colors hover:border-stellar-400/30 hover:bg-stellar-500/10 hover:text-stellar-300 whitespace-nowrap"
             title={
               searchQuery
-                ? `Export ${paginatedHolders.length} filtered holders on this page`
-                : `Export ${paginatedHolders.length} holders on this page`
+                ? t("exportFiltered", { count: paginatedHolders.length })
+                : t("exportCurrent", { count: paginatedHolders.length })
             }
           >
             <svg
@@ -158,21 +157,20 @@ export function HoldersTable({
                 d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
               />
             </svg>
-            Export Page ({paginatedHolders.length})
+            {t("exportPage", { count: paginatedHolders.length })}
           </button>
         </div>
         {searchQuery && (
           <p className="mt-2 text-xs text-gray-400">
-            Found {filtered.length} of {holders.length} holders
+            {t("foundOf", { filtered: filtered.length, holders: holders.length })}
           </p>
         )}
       </div>
 
-      {/* Table */}
       <div className="glass-card overflow-hidden">
         {filtered.length === 0 ? (
           <div className="p-8 text-center text-gray-500">
-            <p>No holders found matching &quot;{searchQuery}&quot;</p>
+            <p>{t("noMatching", { query: searchQuery })}</p>
           </div>
         ) : (
           <>
@@ -185,14 +183,12 @@ export function HoldersTable({
                       onClick={() => toggleSort("address")}
                       aria-sort={
                         sortField === "address"
-                          ? sortDir === "asc"
-                            ? "ascending"
-                            : "descending"
+                          ? sortDir === "asc" ? "ascending" : "descending"
                           : "none"
                       }
                     >
                       <span className="inline-flex items-center gap-1">
-                        Address
+                        {t("address")}
                         <ArrowUpDown className="h-3 w-3" />
                       </span>
                     </th>
@@ -201,14 +197,12 @@ export function HoldersTable({
                       onClick={() => toggleSort("balance")}
                       aria-sort={
                         sortField === "balance"
-                          ? sortDir === "asc"
-                            ? "ascending"
-                            : "descending"
+                          ? sortDir === "asc" ? "ascending" : "descending"
                           : "none"
                       }
                     >
                       <span className="inline-flex items-center justify-end gap-1">
-                        Balance
+                        {t("balance")}
                         <ArrowUpDown className="h-3 w-3" />
                       </span>
                     </th>
@@ -217,17 +211,20 @@ export function HoldersTable({
                       onClick={() => toggleSort("sharePercent")}
                       aria-sort={
                         sortField === "sharePercent"
-                          ? sortDir === "asc"
-                            ? "ascending"
-                            : "descending"
+                          ? sortDir === "asc" ? "ascending" : "descending"
                           : "none"
                       }
                     >
                       <span className="inline-flex items-center justify-end gap-1">
-                        % Share
+                        {t("sharePercent")}
                         <ArrowUpDown className="h-3 w-3" />
                       </span>
                     </th>
+                    {showStatus && (
+                      <th scope="col" className={`${thClass} text-right cursor-default`}>
+                        {t("status")}
+                      </th>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -255,9 +252,7 @@ export function HoldersTable({
                           <div className="hidden h-1.5 w-16 overflow-hidden rounded-full bg-void-700 sm:block">
                             <div
                               className="h-full rounded-full bg-linear-to-r from-stellar-500 to-stellar-400"
-                              style={{
-                                width: `${Math.min(holder.sharePercent, 100)}%`,
-                              }}
+                              style={{ width: `${Math.min(holder.sharePercent, 100)}%` }}
                             />
                           </div>
                           <span className="font-mono text-gray-300">
@@ -265,48 +260,47 @@ export function HoldersTable({
                           </span>
                         </div>
                       </td>
+                      {showStatus && (
+                        <td className="px-4 py-3 text-right">
+                          {frozenAddresses.has(holder.address) ? (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-cyan-400/30 bg-cyan-400/10 px-2 py-0.5 text-[10px] font-medium text-cyan-300">
+                              <Snowflake className="h-3 w-3" aria-hidden="true" />
+                              {t("frozen")}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-gray-500">{t("active")}</span>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
 
-            {/* Pagination */}
             {totalPages > 1 && (
               <div className="flex items-center justify-between border-t border-white/5 px-4 py-3">
                 <div className="text-xs text-gray-400">
-                  Showing {startIndex + 1}-{Math.min(endIndex, sorted.length)}{" "}
-                  of {sorted.length} holders
+                  {t("pageInfo", { start: startIndex + 1, end: Math.min(endIndex, sorted.length), total: sorted.length })}
                 </div>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                     disabled={currentPage === 1}
-                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-gray-300 transition-colors hover:border-stellar-400/30 hover:bg-stellar-500/10 hover:text-stellar-300 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-white/10 disabled:hover:bg-white/5 disabled:hover:text-gray-300"
-                    aria-label="Previous page"
+                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-gray-300 transition-colors hover:border-stellar-400/30 hover:bg-stellar-500/10 hover:text-stellar-300 disabled:cursor-not-allowed disabled:opacity-40"
+                    aria-label={t("previousPage")}
                   >
-                    Previous
+                    {t("previousPage")}
                   </button>
                   <div className="flex items-center gap-1">
                     {Array.from({ length: totalPages }, (_, i) => i + 1)
-                      .filter((page) => {
-                        return (
-                          page === 1 ||
-                          page === totalPages ||
-                          Math.abs(page - currentPage) <= 1
-                        );
-                      })
+                      .filter((page) => page === 1 || page === totalPages || Math.abs(page - currentPage) <= 1)
                       .map((page, idx, arr) => {
                         const prevPage = arr[idx - 1];
                         const showEllipsis = prevPage && page - prevPage > 1;
-
                         return (
                           <div key={page} className="flex items-center gap-1">
-                            {showEllipsis && (
-                              <span className="px-2 text-xs text-gray-500">
-                                ...
-                              </span>
-                            )}
+                            {showEllipsis && <span className="px-2 text-xs text-gray-500">...</span>}
                             <button
                               onClick={() => setCurrentPage(page)}
                               className={`h-8 w-8 rounded-lg text-xs font-medium transition-colors ${
@@ -314,10 +308,8 @@ export function HoldersTable({
                                   ? "bg-stellar-500 text-white"
                                   : "border border-white/10 bg-white/5 text-gray-300 hover:border-stellar-400/30 hover:bg-stellar-500/10 hover:text-stellar-300"
                               }`}
-                              aria-label={`Go to page ${page}`}
-                              aria-current={
-                                currentPage === page ? "page" : undefined
-                              }
+                              aria-label={t("goToPage", { page })}
+                              aria-current={currentPage === page ? "page" : undefined}
                             >
                               {page}
                             </button>
@@ -326,14 +318,12 @@ export function HoldersTable({
                       })}
                   </div>
                   <button
-                    onClick={() =>
-                      setCurrentPage((p) => Math.min(totalPages, p + 1))
-                    }
+                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                     disabled={currentPage === totalPages}
-                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-gray-300 transition-colors hover:border-stellar-400/30 hover:bg-stellar-500/10 hover:text-stellar-300 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-white/10 disabled:hover:bg-white/5 disabled:hover:text-gray-300"
-                    aria-label="Next page"
+                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-gray-300 transition-colors hover:border-stellar-400/30 hover:bg-stellar-500/10 hover:text-stellar-300 disabled:cursor-not-allowed disabled:opacity-40"
+                    aria-label={t("nextPage")}
                   >
-                    Next
+                    {t("nextPage")}
                   </button>
                 </div>
               </div>

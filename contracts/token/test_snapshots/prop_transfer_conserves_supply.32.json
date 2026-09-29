@@ -4,7 +4,49 @@
     "nonce": 0
   },
   "auth": [
-    [],
+    [
+      [
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+        {
+          "function": {
+            "contract_fn": {
+              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+              "function_name": "initialize",
+              "args": [
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                },
+                {
+                  "u32": 7
+                },
+                {
+                  "string": "FuzzToken"
+                },
+                {
+                  "string": "FZT"
+                },
+                {
+                  "i128": {
+                    "hi": 0,
+                    "lo": 10000000000000
+                  }
+                },
+                "void",
+                {
+                  "bool": false
+                },
+                {
+                  "bool": false
+                },
+                "void",
+                "void"
+              ]
+            }
+          },
+          "sub_invocations": []
+        }
+      ]
+    ],
     [],
     [],
     [],
@@ -26,7 +68,7 @@
                 {
                   "i128": {
                     "hi": 0,
-                    "lo": 6718684149144
+                    "lo": 3132902469037
                   }
                 }
               ]
@@ -93,14 +135,14 @@
                 "val": {
                   "i128": {
                     "hi": 0,
-                    "lo": 3281315850856
+                    "lo": 6867097530963
                   }
                 }
               }
             },
             "ext": "v0"
           },
-          104832
+          6307200
         ]
       ],
       [
@@ -141,14 +183,14 @@
                 "val": {
                   "i128": {
                     "hi": 0,
-                    "lo": 6718684149144
+                    "lo": 3132902469037
                   }
                 }
               }
             },
             "ext": "v0"
           },
-          104832
+          6307200
         ]
       ],
       [
@@ -220,6 +262,18 @@
                         },
                         "val": {
                           "u32": 7
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "Initialized"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "bool": true
                         }
                       },
                       {
@@ -321,6 +375,39 @@
       ],
       [
         {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+            "key": {
+              "ledger_key_nonce": {
+                "nonce": 5541220902715666415
+              }
+            },
+            "durability": "temporary"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+                "key": {
+                  "ledger_key_nonce": {
+                    "nonce": 5541220902715666415
+                  }
+                },
+                "durability": "temporary",
+                "val": "void"
+              }
+            },
+            "ext": "v0"
+          },
+          6311999
+        ]
+      ],
+      [
+        {
           "contract_code": {
             "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
           }
@@ -388,6 +475,7 @@
                 {
                   "bool": false
                 },
+                "void",
                 "void"
               ]
             }
@@ -406,6 +494,9 @@
             "topics": [
               {
                 "symbol": "mint"
+              },
+              {
+                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
               },
               {
                 "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
@@ -646,7 +737,7 @@
                 {
                   "i128": {
                     "hi": 0,
-                    "lo": 6718684149144
+                    "lo": 3132902469037
                   }
                 }
               ]
@@ -677,7 +768,7 @@
             "data": {
               "i128": {
                 "hi": 0,
-                "lo": 6718684149144
+                "lo": 3132902469037
               }
             }
           }
@@ -800,7 +891,7 @@
             "data": {
               "i128": {
                 "hi": 0,
-                "lo": 3281315850856
+                "lo": 6867097530963
               }
             }
           }
@@ -852,7 +943,7 @@
             "data": {
               "i128": {
                 "hi": 0,
-                "lo": 6718684149144
+                "lo": 3132902469037
               }
             }
           }
@@ -904,7 +995,7 @@
             "data": {
               "i128": {
                 "hi": 0,
-                "lo": 3281315850856
+                "lo": 6867097530963
               }
             }
           }
@@ -956,7 +1047,7 @@
             "data": {
               "i128": {
                 "hi": 0,
-                "lo": 6718684149144
+                "lo": 3132902469037
               }
             }
           }
@@ -1058,7 +1149,7 @@
             "data": {
               "i128": {
                 "hi": 0,
-                "lo": 3281315850856
+                "lo": 6867097530963
               }
             }
           }
@@ -1110,7 +1201,7 @@
             "data": {
               "i128": {
                 "hi": 0,
-                "lo": 6718684149144
+                "lo": 3132902469037
               }
             }
           }

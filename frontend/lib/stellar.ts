@@ -2,6 +2,7 @@ import * as StellarSdk from "@stellar/stellar-sdk";
 import { type NetworkConfig } from "../types/network";
 import { fetchIndexedEvents } from "./indexer";
 import { wrapRpcCall } from "./soroban";
+import { buildRevokeAllowanceArgs } from "./transactionSimulator";
 
 // ---------------------------------------------------------------------------
 // Config — defaults to Stellar Testnet, overridable via localStorage
@@ -19,6 +20,51 @@ function getHorizonUrl(): string {
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+export interface VerificationResult {
+  status: "verified" | "modified" | "unknown";
+  deployedHash: string | null;
+  referenceHash: string | null;
+  referenceVersion: string | null;
+  isLocked: boolean;
+}
+
+export interface WasmManifestEntry {
+  wasm_hash: string;
+  source_tag: string;
+  build_ledger: string;
+}
+
+export interface WasmManifest {
+  token: {
+    latest: string;
+    versions: Record<string, WasmManifestEntry>;
+    build_info: { sdk_version: string; rust_version: string; profile: string };
+  };
+  vesting: {
+    latest: string;
+    versions: Record<string, WasmManifestEntry>;
+    build_info: { sdk_version: string; rust_version: string; profile: string };
+  };
+  factory?: {
+    deployments: Record<string, FactoryManifestEntry | undefined>;
+  };
+}
+
+export interface FactoryManifestEntry {
+  address: string;
+  wasm_hash: string;
+}
+
+export async function fetchWasmManifest(): Promise<WasmManifest | null> {
+  try {
+    const res = await fetch("/api/wasm-manifest");
+    if (!res.ok) return null;
+    return (await res.json()) as WasmManifest;
+  } catch {
+    return null;
+  }
+}
+
 export interface TokenInfo {
   name: string;
   symbol: string;
@@ -30,6 +76,16 @@ export interface TokenInfo {
   maxSupply?: string | null;
   contractUri?: string;
   complianceNode?: string | null;
+  authorizationRequired?: boolean;
+  authorizationRevocable?: boolean;
+  isPaused?: boolean;
+  isLocked?: boolean;
+}
+
+/** Per-wallet authorization/freeze state for a token contract. */
+export interface WalletTokenState {
+  isAuthorized: boolean;
+  isFrozen: boolean;
 }
 
 export interface TokenHolder {
@@ -57,6 +113,21 @@ export interface TransactionItem {
   timestamp: number;
   ledger: number;
   id: string;
+}
+
+/**
+ * Metadata describing how much of a contract's history a page actually covers.
+ *
+ * When Mercury is unavailable the RPC fallback can only read back to the
+ * oldest ledger still retained by the node (roughly 1000 ledgers, ~83
+ * minutes). Callers must surface this so the UI does not present a truncated
+ * window as the token's complete history.
+ */
+export interface HistoryWindow {
+  /** Oldest ledger included in this page, or null when unknown. */
+  startLedger: number | null;
+  /** True when the page does not reach back to the contract's first ledger. */
+  truncated: boolean;
 }
 
 export interface TokenAllowanceInfo {
@@ -128,6 +199,89 @@ export async function simulateCall(
     },
     { operation: `simulate ${method}`, silent: true },
   );
+}
+
+/**
+ * Read the current WASM hash of a deployed Soroban contract.
+ *
+ * Uses the RPC getLedgerEntries endpoint to fetch the contract instance
+ * entry, which contains the executable WASM hash. Returns the hash as a
+ * lowercase hex string, or null when the entry cannot be read.
+ */
+export async function getContractWasmHash(
+  contractId: string,
+  config: NetworkConfig,
+): Promise<string | null> {
+  try {
+    const rpc = new StellarSdk.rpc.Server(config.rpcUrl);
+    const instanceKey = StellarSdk.xdr.ScVal.scvLedgerKeyContractInstance();
+    const entry = await rpc.getContractData(contractId, instanceKey);
+    const contractData = (entry as { val: StellarSdk.xdr.LedgerEntryData }).val.contractData();
+    const scVal = contractData.val();
+    if (scVal.switch() !== StellarSdk.xdr.ScValType.scvContractInstance()) {
+      return null;
+    }
+    const instance = scVal.instance();
+    const executable = instance.executable();
+    if (executable.switch() !== StellarSdk.xdr.ContractExecutableType.contractExecutableWasm()) {
+      return null;
+    }
+    const wasmHashBuf = executable.wasmHash() as Buffer;
+    return Buffer.from(wasmHashBuf).toString("hex");
+  } catch {
+    return null;
+  }
+}
+
+export type FactoryVerification =
+  | { ok: true; verified: boolean }
+  | { ok: false; reason: string; expected?: string; actual?: string };
+
+/**
+ * Check the configured factory against the audited manifest for the active
+ * network: the address must be the one the manifest names and the on-chain
+ * WASM hash must equal the manifest hash. Fields the manifest leaves blank
+ * are not checked (`verified: false` when nothing could be compared).
+ */
+export async function verifyFactory(
+  factoryAddress: string,
+  config: NetworkConfig,
+): Promise<FactoryVerification> {
+  const manifest = await fetchWasmManifest();
+  const entry = manifest?.factory?.deployments?.[config.network];
+  if (!entry || (!entry.address && !entry.wasm_hash)) {
+    return { ok: true, verified: false };
+  }
+
+  if (entry.address && entry.address !== factoryAddress) {
+    return {
+      ok: false,
+      reason: "The configured factory address is not the audited factory for this network.",
+      expected: entry.address,
+      actual: factoryAddress,
+    };
+  }
+
+  if (entry.wasm_hash) {
+    const onChain = await getContractWasmHash(factoryAddress, config);
+    if (!onChain) {
+      return {
+        ok: false,
+        reason: "Could not read the factory's on-chain WASM hash.",
+        expected: entry.wasm_hash,
+      };
+    }
+    if (onChain.toLowerCase() !== entry.wasm_hash.toLowerCase()) {
+      return {
+        ok: false,
+        reason: "The factory's on-chain WASM hash does not match the audited build.",
+        expected: entry.wasm_hash,
+        actual: onChain,
+      };
+    }
+  }
+
+  return { ok: true, verified: true };
 }
 
 function encodeTopicSymbol(symbol: string): string {
@@ -378,6 +532,84 @@ function toU32ScVal(value: number): StellarSdk.xdr.ScVal {
  * This function attempts to call the required SEP-41 methods to verify
  * that the contract is a valid token contract.
  */
+/**
+ * Result of probing a contract for a SEP-41 token interface.
+ *
+ * Three states, not two: a well-formed contract ID can point at an account
+ * (not a contract at all), at a contract that simply does not export the
+ * token interface, or at a real token. Collapsing the middle state into
+ * either of the others is what made every well-formed `C...` address render
+ * as an empty token dashboard.
+ */
+export type TokenContractProbe =
+  | { status: "token" }
+  | { status: "not-a-contract"; error: string }
+  | { status: "no-token-interface"; error: string }
+  | { status: "unreachable"; error: string };
+
+/**
+ * Distinguish "this contract has no `name()` export" from "the RPC call
+ * itself failed".
+ *
+ * `simulateTransaction` reports a missing export as a simulation error whose
+ * text names the missing function, while a transport failure rejects the
+ * promise outright. That difference is the whole probe: it is the same
+ * pattern `set_compliance_node` uses on the contract side to decide whether
+ * an optional getter exists.
+ */
+function isMissingExportError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    /missing\s+(value|function|method|export)/i.test(message) ||
+    /function\s+['"`]?[a-z_][a-z0-9_]*['"`]?\s+(not\s+found|does\s+not\s+exist)/i.test(
+      message,
+    ) ||
+    /has\s+no\s+member/i.test(message) ||
+    /not\s+found\s+in\s+contract/i.test(message)
+  );
+}
+
+/**
+ * Probe a contract once and report which of the three states it is in.
+ *
+ * Runs a single `name()` simulation: a success means the contract exports the
+ * token interface, a missing-export simulation error means it is a contract
+ * without one, and anything else (transport, bad ID) is reported as
+ * unreachable so the caller can keep showing the transport-failure copy.
+ */
+export async function probeTokenContract(
+  contractId: string,
+  config: NetworkConfig,
+): Promise<TokenContractProbe> {
+  try {
+    const nameVal = await simulateCall(contractId, "name", config);
+    try {
+      decodeString(nameVal);
+    } catch {
+      return {
+        status: "no-token-interface",
+        error: "Contract does not implement a decodable 'name()' method",
+      };
+    }
+    return { status: "token" };
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Unknown validation error";
+
+    if (isMissingExportError(error)) {
+      return { status: "no-token-interface", error: message };
+    }
+
+    // A contract ID that does not resolve to a deployed contract surfaces as
+    // a ledger-entry lookup failure rather than a missing export.
+    if (/contract\s+(not\s+found|does\s+not\s+exist)/i.test(message)) {
+      return { status: "not-a-contract", error: message };
+    }
+
+    return { status: "unreachable", error: message };
+  }
+}
+
 export async function validateTokenContract(
   contractId: string,
   config: NetworkConfig,
@@ -479,7 +711,7 @@ async function _fetchTokenInfo(
     simulateCall(contractId, "name", config),
     simulateCall(contractId, "symbol", config),
     simulateCall(contractId, "decimals", config),
-    simulateCall(contractId, "admin", config).catch(() => null),
+    simulateCall(contractId, "admin_if_any", config),
   ]);
 
   const decimals = decodeU32(decimalsVal);
@@ -509,9 +741,11 @@ async function _fetchTokenInfo(
   let contractUri: string | undefined;
   try {
     const uriVal = await simulateCall(contractId, "contract_uri", config);
-    contractUri = decodeString(uriVal);
+    if (uriVal && uriVal.switch() !== StellarSdk.xdr.ScValType.scvVoid()) {
+      contractUri = decodeString(uriVal);
+    }
   } catch {
-    // contract_uri not set or not accessible
+    // contract_uri may not be implemented or accessible; ignore.
   }
 
   let complianceNode: string | null = null;
@@ -524,18 +758,93 @@ async function _fetchTokenInfo(
     // compliance_node may not be implemented or accessible; ignore.
   }
 
+  let authorizationRequired = false;
+  let authorizationRevocable = false;
+  try {
+    const reqVal = await simulateCall(contractId, "authorization_required", config);
+    if (reqVal) authorizationRequired = Boolean(reqVal.b());
+    const revVal = await simulateCall(contractId, "authorization_revocable", config);
+    if (revVal) authorizationRevocable = Boolean(revVal.b());
+  } catch {
+    // authorization checks not implemented or accessible; ignore.
+  }
+
+  let isPaused = false;
+  try {
+    const pausedVal = await simulateCall(contractId, "is_paused", config);
+    isPaused = Boolean(pausedVal.b());
+  } catch {
+    // is_paused not implemented on this contract; assume not paused.
+  }
+
+  let isLocked = false;
+  try {
+    const lockedVal = await simulateCall(contractId, "is_locked", config);
+    isLocked = Boolean(lockedVal.b());
+  } catch {
+    // is_locked not implemented on this contract; assume not locked.
+  }
+
   return {
     name: decodeString(nameVal),
     symbol: decodeString(symbolVal),
     decimals,
     totalSupply,
     circulatingSupply,
-    admin: adminVal ? decodeAddress(adminVal) : "N/A",
+    admin:
+      adminVal &&
+      typeof (adminVal as StellarSdk.xdr.ScVal).switch === "function" &&
+      (adminVal as StellarSdk.xdr.ScVal).switch() !==
+        StellarSdk.xdr.ScValType.scvVoid()
+        ? decodeAddress(adminVal as StellarSdk.xdr.ScVal)
+        : "N/A",
     contractId,
     maxSupply,
     contractUri,
     complianceNode,
+    authorizationRequired,
+    authorizationRevocable,
+    isPaused,
+    isLocked,
   };
+}
+
+/**
+ * Fetch a specific wallet's authorization/freeze state on a token contract.
+ * Guarded so contracts missing `is_authorized`/`is_frozen` degrade to the
+ * permissive defaults (authorized, not frozen).
+ */
+export async function fetchWalletTokenState(
+  contractId: string,
+  address: string,
+  config: NetworkConfig,
+): Promise<WalletTokenState> {
+  const addressScVal = new StellarSdk.Address(address).toScVal();
+
+  let isAuthorized = true;
+  try {
+    const authVal = await simulateCall(
+      contractId,
+      "is_authorized",
+      config,
+      [addressScVal],
+    );
+    isAuthorized = Boolean(authVal.b());
+  } catch {
+    // is_authorized not implemented; assume authorized.
+  }
+
+  let isFrozen = false;
+  try {
+    const frozenVal = await simulateCall(contractId, "is_frozen", config, [
+      addressScVal,
+    ]);
+    isFrozen = Boolean(frozenVal.b());
+  } catch {
+    // is_frozen not implemented; assume not frozen.
+  }
+
+  return { isAuthorized, isFrozen };
 }
 
 /**
@@ -743,6 +1052,82 @@ async function resolveVestingScheduleIndex(params: {
   return { scheduleIndex: scheduleCount - 1, scheduleCount };
 }
 
+/** Entries per `get_schedules_paginated` call. Matches the dashboard page size. */
+const SCHEDULE_PAGE_SIZE = 20;
+
+/**
+ * Fetch all vesting schedules for a recipient.
+ * Replaces the N+1 pattern (get_schedule_count + N × get_schedule).
+ *
+ * Pages through `get_schedules_paginated` rather than calling
+ * `get_all_schedules` (#466). The contract caps a recipient at
+ * `MAX_SCHEDULES_PER_RECIPIENT` schedules, so the aggregate getter is now
+ * bounded — but one response carrying the whole set still costs a simulation
+ * proportional to their total grants, and the dashboard renders a screenful at
+ * a time. Paging keeps each response small and per-call work constant as
+ * grants accumulate.
+ *
+ * Pages are followed until one comes back shorter than the page size, which is
+ * the only reliable "no more" signal: a short page can still be followed by
+ * more entries.
+ */
+export async function fetchAllVestingSchedules(
+  vestingContractId: string,
+  recipient: string,
+  config: NetworkConfig,
+): Promise<VestingScheduleInfo[]> {
+  const recipientScVal = new StellarSdk.Address(recipient).toScVal();
+
+  // Callers use `scheduleCount` for "x of y", so it has to be the recipient's
+  // real total rather than the size of whichever page happened to land last.
+  const scheduleCount = await fetchVestingScheduleCount(
+    vestingContractId,
+    recipient,
+    config,
+  );
+  if (scheduleCount <= 0) {
+    return [];
+  }
+
+  const schedules: VestingScheduleInfo[] = [];
+  for (let start = 0; start < scheduleCount; start += SCHEDULE_PAGE_SIZE) {
+    const result = await simulateCall(
+      vestingContractId,
+      "get_schedules_paginated",
+      config,
+      [
+        recipientScVal,
+        nativeToScVal(BigInt(start), { type: "u32" }),
+        nativeToScVal(BigInt(SCHEDULE_PAGE_SIZE), { type: "u32" }),
+      ],
+    );
+
+    const vec = result.vec();
+    if (!vec || vec.length === 0) {
+      // The count said there was more; a short read here means the index moved
+      // under us. Stop rather than spin.
+      break;
+    }
+
+    for (let i = 0; i < vec.length; i++) {
+      const fields = vec[i].map()!;
+      schedules.push({
+        recipient: decodeAddress(getStructField(fields, "recipient")),
+        totalAmount: decodeI128(getStructField(fields, "total_amount")),
+        cliffLedger: decodeU32(getStructField(fields, "cliff_ledger")),
+        endLedger: decodeU32(getStructField(fields, "end_ledger")),
+        released: decodeI128(getStructField(fields, "released")),
+        revoked: getStructField(fields, "revoked").b(),
+        // Global index, not page-relative: this value is passed back to
+        // `release`, which addresses schedules absolutely.
+        scheduleIndex: start + i,
+        scheduleCount,
+      });
+    }
+  }
+  return schedules;
+}
+
 /**
  * Fetch a vesting schedule.
  */
@@ -778,22 +1163,355 @@ export async function fetchVestingSchedule(
 }
 
 /**
+ * Fetch the vested amount for a recipient's schedule directly from the
+ * contract's `vested_amount` getter.
+ *
+ * This is the authoritative value — prefer it over any client-side
+ * replication of the vesting formula. The on-chain formula is the source
+ * of truth and may change (see issues #356, #357).
+ */
+export async function fetchVestedAmount(
+  vestingContractId: string,
+  recipient: string,
+  config: NetworkConfig,
+  scheduleIndex?: number,
+): Promise<string> {
+  const resolved = await resolveVestingScheduleIndex({
+    vestingContractId,
+    recipient,
+    config,
+    scheduleIndex,
+  });
+  const recipientScVal = new StellarSdk.Address(recipient).toScVal();
+  const result = await simulateCall(
+    vestingContractId,
+    "vested_amount",
+    config,
+    [recipientScVal, toU32ScVal(resolved.scheduleIndex)],
+  );
+  return decodeI128(result);
+}
+
+/**
  * Fetch transaction history (events) for a token contract via the Mercury indexer.
  * Uses cursor-based pagination to walk past the Soroban RPC retention window.
  */
+/**
+ * Every topic the token contract emits, and the set the indexer and live-poll
+ * hooks subscribe to against a token contract address.
+ *
+ * Derived from the `symbol_short!` literals in `contracts/token/src/lib.rs`
+ * (its own `EXPECTED_TOPICS` fixture is the source of truth). Kept in sync by
+ * `lib/__tests__/trackedEventTopics.test.ts`, which reads the contract source
+ * directly — the drift this list had accumulated is exactly what that test
+ * now prevents.
+ */
+export const TRACKED_EVENT_TOPICS = [
+  "init",
+  "transfer",
+  "mint",
+  "burn",
+  "clawback",
+  "freeze",
+  "unfreeze",
+  "pause",
+  "unpause",
+  "authorize",
+  "rev_auth",
+  "revoked",
+  "upgrade",
+  "approve",
+  "set_max_b",
+  "set_cnode",
+  "prop_adm",
+  "cncl_adm",
+  "set_admin",
+  "upd_uri",
+  "set_areq",
+  "rvk_rvc",
+] as const;
+
+/**
+ * Every topic the vesting contract emits.
+ *
+ * Note `init`, `pause`, `unpause`, `prop_adm`, `revoked` and `upgrade` are
+ * emitted by *both* contracts with identical topic tuples, so topic-only
+ * filtering cannot tell them apart. Decoding is keyed on the emitting
+ * contract as well as the topic — see `decodeActivityEvent`.
+ */
+export const TRACKED_VESTING_EVENT_TOPICS = [
+  "init",
+  "prop_adm",
+  "acc_adm",
+  "create",
+  "batch",
+  "release",
+  "revoke",
+  "clf_ext",
+  "pause",
+  "unpause",
+  "prune",
+  "upgrade",
+  "revoked",
+] as const;
+
+/** Which contract emitted an event. Disambiguates the shared topic names. */
+export type ActivitySource = "token" | "vesting";
+
+type TrackedTopic = (typeof TRACKED_EVENT_TOPICS)[number];
+type TrackedVestingTopic = (typeof TRACKED_VESTING_EVENT_TOPICS)[number];
+
+function isTrackedTopic(s: string): s is TrackedTopic {
+  return (TRACKED_EVENT_TOPICS as readonly string[]).includes(s);
+}
+
+function isTrackedVestingTopic(s: string): s is TrackedVestingTopic {
+  return (TRACKED_VESTING_EVENT_TOPICS as readonly string[]).includes(s);
+}
+
+/**
+ * Resolve a raw topic name to an activity type, namespacing vesting events.
+ *
+ * `init` from the token contract and `init` from the vesting contract are
+ * different activities to a reader, so the vesting ones become
+ * `vesting:init`, `vesting:pause`, and so on. That keeps a single string key
+ * for the feed to switch on while leaving the six shared names unambiguous.
+ */
+export function resolveActivityType(
+  topic: string,
+  source: ActivitySource,
+): TokenActivityType {
+  if (source === "vesting") {
+    return isTrackedVestingTopic(topic) ? `vesting:${topic}` : "other";
+  }
+  return isTrackedTopic(topic) ? topic : "other";
+}
+
+/**
+ * Decode a single raw event into a partial TokenActivityInfo.
+ * Returns null for topics we don't recognise.
+ */
+export function decodeActivityEvent(
+  topicStrings: string[],
+  value: string | undefined,
+  meta: { id: string; txHash: string; ledger: number; timestamp: string },
+  source: ActivitySource = "token",
+): TokenActivityInfo | null {
+  if (topicStrings.length === 0) return null;
+  const topic0 = toScVal(topicStrings[0]);
+  if (!topic0) return null;
+  const typePath = decodeString(topic0);
+
+  const base: TokenActivityInfo = {
+    id: meta.id,
+    pagingToken: meta.id,
+    ledger: meta.ledger,
+    type: "other",
+    amount: "-",
+    from: "-",
+    to: "-",
+    txHash: meta.txHash,
+    timestamp: meta.timestamp,
+  };
+
+  // Keyed on (contract, topic): the same topic name means different things
+  // depending on which contract emitted it.
+  base.type = resolveActivityType(typePath, source);
+
+  const data = toScVal(value);
+
+  if (source === "vesting") {
+    decodeVestingPayload(base, typePath, topicStrings, data);
+    return base;
+  }
+
+  switch (typePath) {
+    case "mint": {
+      if (data) base.amount = decodeI128(data);
+      // SEP-41: topics are ("mint", admin, to)
+      if (topicStrings.length > 2) {
+        const adminVal = toScVal(topicStrings[1]);
+        const toVal = toScVal(topicStrings[2]);
+        if (adminVal) base.from = decodeAddress(adminVal);
+        if (toVal) base.to = decodeAddress(toVal);
+      }
+      break;
+    }
+    case "burn": {
+      if (data) base.amount = decodeI128(data);
+      if (topicStrings.length > 1) {
+        const fromVal = toScVal(topicStrings[1]);
+        if (fromVal) base.from = decodeAddress(fromVal);
+      }
+      break;
+    }
+    case "clawback": {
+      if (data) base.amount = decodeI128(data);
+      // SEP-41: topics are ("clawback", admin, from)
+      if (topicStrings.length > 2) {
+        const adminVal = toScVal(topicStrings[1]);
+        const fromVal = toScVal(topicStrings[2]);
+        if (adminVal) base.to = decodeAddress(adminVal);
+        if (fromVal) base.from = decodeAddress(fromVal);
+      }
+      break;
+    }
+    case "transfer": {
+      if (data) base.amount = decodeI128(data);
+      if (topicStrings.length > 2) {
+        const fromVal = toScVal(topicStrings[1]);
+        const toVal = toScVal(topicStrings[2]);
+        if (fromVal) base.from = decodeAddress(fromVal);
+        if (toVal) base.to = decodeAddress(toVal);
+      }
+      break;
+    }
+    case "freeze":
+    case "unfreeze":
+    case "authorize":
+    case "rev_auth": {
+      // topic[1] = account address being acted on
+      if (topicStrings.length > 1) {
+        const addrVal = toScVal(topicStrings[1]);
+        if (addrVal) base.subject = decodeAddress(addrVal);
+      }
+      break;
+    }
+    case "prop_adm": {
+      // topics are ("prop_adm", current_admin, new_admin)
+      if (topicStrings.length > 2) {
+        const currentVal = toScVal(topicStrings[1]);
+        const newVal = toScVal(topicStrings[2]);
+        if (currentVal) base.from = decodeAddress(currentVal);
+        if (newVal) base.to = decodeAddress(newVal);
+      }
+      break;
+    }
+    case "set_admin": {
+      // topics are ("set_admin", old_admin, new_admin)
+      if (topicStrings.length > 2) {
+        const oldVal = toScVal(topicStrings[1]);
+        const newVal = toScVal(topicStrings[2]);
+        if (oldVal) base.from = decodeAddress(oldVal);
+        if (newVal) base.to = decodeAddress(newVal);
+      }
+      break;
+    }
+    case "revoked":
+    case "pause":
+    case "unpause":
+    case "upgrade":
+    case "init":
+    case "approve":
+    case "set_max_b":
+    case "set_cnode":
+    case "cncl_adm":
+    case "upd_uri":
+    case "set_areq":
+    case "rvk_rvc":
+      // No address payload or special handling needed for activity feed
+      break;
+    default:
+      break;
+  }
+
+  return base;
+}
+
+/**
+ * Fill in the address and amount columns for a vesting-contract event.
+ *
+ * Topic and data shapes come from `docs/events.json`, the checked-in fixture
+ * the vesting contract's own drift test asserts against.
+ */
+function decodeVestingPayload(
+  base: TokenActivityInfo,
+  topic: string,
+  topicStrings: string[],
+  data: StellarSdk.xdr.ScVal | null,
+): void {
+  /** `create`, `release`, `revoke` and `clf_ext` carry the recipient at topic 1. */
+  const readRecipient = () => {
+    if (topicStrings.length > 1) {
+      const recipient = toScVal(topicStrings[1]);
+      if (recipient) base.subject = decodeAddress(recipient);
+    }
+  };
+
+  switch (topic) {
+    case "create":
+    case "release": {
+      readRecipient();
+      if (data) base.amount = decodeI128(data);
+      break;
+    }
+    case "revoke": {
+      // data is (releasable, unvested); the releasable half is what the
+      // recipient still receives, so that is the figure worth showing.
+      readRecipient();
+      if (data) base.amount = decodeFirstI128OfTuple(data);
+      break;
+    }
+    case "clf_ext": {
+      // data is (old_cliff, new_cliff) — ledger numbers, not an amount.
+      readRecipient();
+      break;
+    }
+    case "batch": {
+      // data is (created_count, total_amount).
+      if (data) base.amount = decodeSecondI128OfTuple(data);
+      break;
+    }
+    case "prune": {
+      if (data) base.subject = decodeAddress(data);
+      break;
+    }
+    case "prop_adm":
+    case "acc_adm": {
+      if (data) base.to = decodeAddress(data);
+      break;
+    }
+    default:
+      // init, pause, unpause, upgrade, revoked carry nothing the feed shows.
+      break;
+  }
+}
+
+/** First element of an ScVal tuple, as an i128 string; "-" if not shaped so. */
+function decodeFirstI128OfTuple(data: StellarSdk.xdr.ScVal): string {
+  return decodeI128OfTupleAt(data, 0);
+}
+
+/** Second element of an ScVal tuple, as an i128 string; "-" if not shaped so. */
+function decodeSecondI128OfTuple(data: StellarSdk.xdr.ScVal): string {
+  return decodeI128OfTupleAt(data, 1);
+}
+
+function decodeI128OfTupleAt(data: StellarSdk.xdr.ScVal, index: number): string {
+  try {
+    const vec = data.vec();
+    const element = vec?.[index];
+    return element ? decodeI128(element) : "-";
+  } catch {
+    return "-";
+  }
+}
+
 export async function fetchTransactionHistory(
   contractId: string,
   config: NetworkConfig,
   options: { cursor?: string; limit?: number } = {},
-): Promise<{ items: TransactionItem[]; nextCursor: string | null }> {
+): Promise<{
+  items: TransactionItem[];
+  nextCursor: string | null;
+  window: HistoryWindow;
+}> {
   const { cursor, limit = 200 } = options;
-  const topicTransfer = encodeTopicSymbol("transfer");
-  const topicMint = encodeTopicSymbol("mint");
-  const topicBurn = encodeTopicSymbol("burn");
-  const topicClawback = encodeTopicSymbol("clawback");
+
+  const topicFilters = TRACKED_EVENT_TOPICS.map(encodeTopicSymbol);
 
   const { events, nextCursor } = await fetchIndexedEvents(contractId, config, {
-    topics: [topicTransfer, topicMint, topicBurn, topicClawback],
+    topics: topicFilters,
     cursor,
     limit,
   });
@@ -805,6 +1523,7 @@ export async function fetchTransactionHistory(
     if (!topic0) continue;
 
     const typePath = decodeString(topic0);
+    // fetchTransactionHistory returns only the classic token-transfer types
     if (
       typePath !== "mint" &&
       typePath !== "burn" &&
@@ -826,14 +1545,20 @@ export async function fetchTransactionHistory(
 
     item.amount = decodeI128(data);
 
-    if (typePath === "mint" && event.topic.length > 1) {
-      const to = toScVal(event.topic[1]);
+    if (typePath === "mint" && event.topic.length > 2) {
+      // SEP-41: topics are ("mint", admin, to)
+      const admin = toScVal(event.topic[1]);
+      const to = toScVal(event.topic[2]);
+      if (admin) item.from = decodeAddress(admin);
       if (to) item.to = decodeAddress(to);
-    } else if (
-      (typePath === "burn" || typePath === "clawback") &&
-      event.topic.length > 1
-    ) {
+    } else if (typePath === "burn" && event.topic.length > 1) {
       const from = toScVal(event.topic[1]);
+      if (from) item.from = decodeAddress(from);
+    } else if (typePath === "clawback" && event.topic.length > 2) {
+      // SEP-41: topics are ("clawback", admin, from)
+      const admin = toScVal(event.topic[1]);
+      const from = toScVal(event.topic[2]);
+      if (admin) item.to = decodeAddress(admin);
       if (from) item.from = decodeAddress(from);
     } else if (typePath === "transfer" && event.topic.length > 2) {
       const from = toScVal(event.topic[1]);
@@ -845,16 +1570,48 @@ export async function fetchTransactionHistory(
     items.push(item as TransactionItem);
   }
 
-  return { items: items.reverse(), nextCursor };
+  // The RPC fallback anchors its no-cursor scan ~1000 ledgers behind the head
+  // (see indexer.ts). Surface the oldest ledger we actually saw so callers can
+  // tell the user the window is truncated rather than presenting it as the
+  // token's full history. A cursor means the caller is paging through an
+  // already-established window, so we only compute this on the first page.
+  const window = computeHistoryWindow(events, cursor);
+
+  return { items: items.reverse(), nextCursor, window };
 }
+
+function computeHistoryWindow(
+  events: { ledger: number }[],
+  cursor: string | undefined,
+): HistoryWindow {
+  if (cursor) {
+    return { startLedger: null, truncated: false };
+  }
+  if (events.length === 0) {
+    return { startLedger: null, truncated: false };
+  }
+  const startLedger = events.reduce(
+    (min, e) => (e.ledger < min ? e.ledger : min),
+    events[0].ledger,
+  );
+  return { startLedger, truncated: true };
+}
+
+export type TokenActivityType =
+  | (typeof TRACKED_EVENT_TOPICS)[number]
+  | `vesting:${(typeof TRACKED_VESTING_EVENT_TOPICS)[number]}`
+  | "other";
 
 export interface TokenActivityInfo {
   id: string;
   pagingToken: string;
-  type: "mint" | "transfer" | "burn" | "clawback" | "other";
+  ledger?: number;
+  type: TokenActivityType;
   amount: string;
   from: string;
   to: string;
+  /** address or subject involved in admin/compliance events */
+  subject?: string;
   timestamp: string;
   txHash: string;
 }
@@ -868,19 +1625,20 @@ export async function fetchAccountOperations(
   config: NetworkConfig,
   cursor?: string,
   limit = 10,
-): Promise<{ records: TokenActivityInfo[]; nextCursor: string | null }> {
+): Promise<{
+  records: TokenActivityInfo[];
+  nextCursor: string | null;
+  window: HistoryWindow;
+}> {
   try {
     // For contract IDs, use indexer events instead of Horizon.
     if (accountId.startsWith("C")) {
-      const topicTransfer = encodeTopicSymbol("transfer");
-      const topicMint = encodeTopicSymbol("mint");
-      const topicBurn = encodeTopicSymbol("burn");
-      const topicClawback = encodeTopicSymbol("clawback");
+      const topicFilters = TRACKED_EVENT_TOPICS.map(encodeTopicSymbol);
       const pageSize = Math.min(limit, 200);
 
       const { events, nextCursor: nextIndexerCursor } =
         await fetchIndexedEvents(accountId, config, {
-          topics: [topicTransfer, topicMint, topicBurn, topicClawback],
+          topics: topicFilters,
           limit: pageSize,
           cursor: cursor ?? undefined,
         });
@@ -888,63 +1646,33 @@ export async function fetchAccountOperations(
       const records: TokenActivityInfo[] = [];
 
       for (const event of events) {
-        const topic0 = toScVal(event.topic[0]);
-        if (!topic0) continue;
-
-        const typePath = decodeString(topic0);
-        if (
-          typePath !== "mint" &&
-          typePath !== "burn" &&
-          typePath !== "clawback" &&
-          typePath !== "transfer"
-        ) {
-          continue;
-        }
-
-        const data = toScVal(event.value);
-        if (!data) continue;
-
-        const amount = decodeI128(data);
-        let from = "-";
-        let to = "-";
-
-        if (typePath === "mint" && event.topic.length > 1) {
-          const toVal = toScVal(event.topic[1]);
-          if (toVal) to = decodeAddress(toVal);
-        } else if (
-          (typePath === "burn" || typePath === "clawback") &&
-          event.topic.length > 1
-        ) {
-          const fromVal = toScVal(event.topic[1]);
-          if (fromVal) from = decodeAddress(fromVal);
-        } else if (typePath === "transfer" && event.topic.length > 2) {
-          const fromVal = toScVal(event.topic[1]);
-          const toVal = toScVal(event.topic[2]);
-          if (fromVal) from = decodeAddress(fromVal);
-          if (toVal) to = decodeAddress(toVal);
-        }
-
-        records.push({
-          id: event.id || `${event.tx_hash}-${event.ledger}`,
-          pagingToken: event.id || "",
-          type: typePath as TokenActivityInfo["type"],
-          amount,
-          from,
-          to,
-          timestamp: event.timestamp,
-          txHash: event.tx_hash,
-        });
+        const decoded = decodeActivityEvent(
+          // IndexedEvent.topic is unknown[]; the decoder re-parses each entry
+          // as an XDR-encoded string, so normalize before handing it over.
+          event.topic.map((t) => String(t)),
+          typeof event.value === "string" ? event.value : undefined,
+          {
+            id: event.id || `${event.tx_hash}-${event.ledger}`,
+            txHash: event.tx_hash,
+            ledger: event.ledger,
+            timestamp: event.timestamp,
+          },
+        );
+        if (decoded) records.push(decoded);
       }
 
-      const nextCursor = nextIndexerCursor;
-      return { records, nextCursor };
+      return {
+        records,
+        nextCursor: nextIndexerCursor,
+        window: computeHistoryWindow(events, cursor),
+      };
     }
 
     const horizon = new StellarSdk.Horizon.Server(getHorizonUrl());
 
     // Horizon's .forAccount() only accepts Ed25519 public keys (starting with G).
     if (!accountId.startsWith("G") && !accountId.startsWith("M")) {
-      return { records: [], nextCursor: null };
+      return { records: [], nextCursor: null, window: { startLedger: null, truncated: false } };
     }
 
     let callBuilder = horizon
@@ -1053,10 +1781,14 @@ export async function fetchAccountOperations(
     // Filter out "other" if we only want token activity, but keeping it helps visibility
     const filtered = parsed.filter((p) => p.type !== "other");
 
-    return { records: filtered.length > 0 ? filtered : parsed, nextCursor };
+    return {
+      records: filtered.length > 0 ? filtered : parsed,
+      nextCursor,
+      window: { startLedger: null, truncated: false },
+    };
   } catch (error) {
     console.error("Error fetching account operations from Horizon:", error);
-    return { records: [], nextCursor: null };
+    return { records: [], nextCursor: null, window: { startLedger: null, truncated: false } };
   }
 }
 
@@ -1355,6 +2087,39 @@ export async function buildApproveTransaction(params: {
         expirationScVal,
       ),
     )
+    .setTimeout(30)
+    .build();
+
+  const assembled = await simulateAndAssembleTransaction(tx, config);
+  return assembled.build().toXDR();
+}
+
+/**
+ * Build a transaction XDR that revokes an allowance on a SEP-41 token.
+ *
+ * Delegates argument construction to `buildRevokeAllowanceArgs` so the
+ * preflight simulation and the real submission use identical arguments.
+ * See that function and `contracts/token/src/lib.rs` for the rationale.
+ */
+export async function buildRevokeAllowanceTransaction(params: {
+  tokenContractId: string;
+  ownerAddress: string;
+  spenderAddress: string;
+  config: NetworkConfig;
+}): Promise<string> {
+  const { tokenContractId, ownerAddress, spenderAddress, config } = params;
+
+  const contract = new StellarSdk.Contract(tokenContractId);
+  const args = buildRevokeAllowanceArgs(ownerAddress, spenderAddress);
+
+  const horizon = new StellarSdk.Horizon.Server(config.horizonUrl);
+  const sourceAccount = await horizon.loadAccount(ownerAddress);
+
+  const tx = new StellarSdk.TransactionBuilder(sourceAccount, {
+    fee: StellarSdk.BASE_FEE,
+    networkPassphrase: config.passphrase,
+  })
+    .addOperation(contract.call("approve", ...args))
     .setTimeout(30)
     .build();
 

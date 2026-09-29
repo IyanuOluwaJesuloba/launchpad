@@ -1,20 +1,22 @@
 /**
  * Transaction Simulator Tests
- *
  * Tests for the Soroban transaction pre-flight check system.
  * These are examples of how to test the simulator and error parsing.
  */
 
 import "@testing-library/jest-dom";
 import {
+  buildRevokeAllowanceArgs,
   parseSorobanError,
   // simulateTransaction,
 } from "@/lib/transactionSimulator";
 import {
+
   renderHook,
   //  act
 } from "@testing-library/react";
 import { useTransactionSimulator } from "@/hooks/useTransactionSimulator";
+import { ToastProvider } from "@/app/providers/ToastProvider";
 
 // Mock useNetwork
 jest.mock("@/app/providers/NetworkProvider", () => ({
@@ -27,9 +29,7 @@ jest.mock("@/app/providers/NetworkProvider", () => ({
   }),
 }));
 
-// ───────────────────────────────────────────────────────────────────────────
 // Error Parsing Tests
-// ───────────────────────────────────────────────────────────────────────────
 
 describe("parseSorobanError", () => {
   it("maps insufficient balance error", () => {
@@ -265,13 +265,17 @@ import { MintForm } from "@/components/forms/MintForm";
 
 describe("MintForm with Pre-flight Checks", () => {
   it("renders check button and submit button", () => {
-    render(<MintForm adminAddress="GABC123..." />);
+    render(
+      <ToastProvider>
+        <MintForm adminAddress="GABC123..." tokenDecimals={7} />
+      </ToastProvider>,
+    );
     expect(screen.getByText("Check Transaction")).toBeInTheDocument();
     expect(screen.getByText("Mint Tokens")).toBeInTheDocument();
   });
 
   // it("disables submit button until check succeeds", async () => {
-  //   // const { container } = render(<MintForm adminAddress="GABC123..." />);
+  //   // const { container } = render(<MintForm adminAddress="GABC123..." tokenDecimals={7} />);
 
   //   const submitButton = screen.getByText("Mint Tokens") as HTMLButtonElement;
   //   expect(submitButton.disabled).toBe(true);
@@ -281,17 +285,11 @@ describe("MintForm with Pre-flight Checks", () => {
   // });
 
   it("shows pre-flight results after check", async () => {
-    render(<MintForm adminAddress="GABC123..." />);
-
-    // Fill form
-    // const inputs = screen.getAllByRole("textbox");
-    // ... fill inputs ...
-
-    // Click check
-    // const checkButton = screen.getByText("Check Transaction");
-
-    // click check...
-    // expect(screen.queryByText(/ready|error/i)).toBeInTheDocument();
+    render(
+      <ToastProvider>
+        <MintForm adminAddress="GABC123..." tokenDecimals={7} />
+      </ToastProvider>,
+    );
   });
 });
 
@@ -317,6 +315,39 @@ describe("Simulation with Mock RPC", () => {
   it("returns warnings for high fees", async () => {
     // Mock RPC returning high cost
     // expect(result.warnings).toContain("High");
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// buildRevokeAllowanceArgs Tests
+// ───────────────────────────────────────────────────────────────────────────
+
+describe("buildRevokeAllowanceArgs", () => {
+  it("returns four ScVal arguments", () => {
+    const owner = "GBPLA3EQJGNQFHZNQWUZ3Z7YZY7QZ5RZQ5JQ5JQ5JQ5JQ5JQ5JQ5JQ5";
+    const spender = "GCTV2QEQJGNQFHZNQWUZ3Z7YZY7QZ5RZQ5JQ5JQ5JQ5JQ5JQ5JQ5JQ5";
+    const args = buildRevokeAllowanceArgs(owner, spender);
+
+    expect(args).toHaveLength(4);
+  });
+
+  it("passes 0 for amount and expiration_ledger", () => {
+    const owner = "GBPLA3EQJGNQFHZNQWUZ3Z7YZY7QZ5RZQ5JQ5JQ5JQ5JQ5JQ5JQ5JQ5";
+    const spender = "GCTV2QEQJGNQFHZNQWUZ3Z7YZY7QZ5RZQ5JQ5JQ5JQ5JQ5JQ5JQ5JQ5";
+    const args = buildRevokeAllowanceArgs(owner, spender);
+
+    // owner and spender are Address ScVals — just verify they're present
+    expect(args[0]).toBeDefined();
+    expect(args[1]).toBeDefined();
+
+    // amount (i128) must be 0
+    const amountVal = args[2].value() as { hi: number; lo: number };
+    expect(amountVal.hi).toBe(0);
+    expect(amountVal.lo).toBe(0);
+
+    // expiration_ledger (u32) must be 0
+    const expVal = args[3].value() as number;
+    expect(expVal).toBe(0);
   });
 });
 

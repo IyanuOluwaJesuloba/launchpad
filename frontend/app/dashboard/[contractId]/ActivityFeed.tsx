@@ -1,28 +1,67 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { AlertTriangle } from "lucide-react";
 import {
   ArrowRight,
   Loader2,
   ArrowLeftRight,
   Flame,
   Droplets,
+  SnowflakeIcon,
+  PauseCircle,
+  PlayCircle,
+  ShieldCheck,
+  ShieldOff,
+  UserCheck,
+  UserX,
+  Upload,
+  CalendarPlus,
+  CalendarClock,
+  Layers,
+  HandCoins,
+  Ban,
+  Eraser,
+  UserCog,
+  Rocket,
 } from "lucide-react";
 import {
+  type AccountOperationsResult,
   type TokenActivityInfo,
 } from "@/lib/stellar";
 import { ExplorerLink } from "@/components/ui/ExplorerLink";
 import { useSoroban } from "@/hooks/useSoroban";
 import { useContractEvents } from "@/hooks/useContractEvents";
 
-export default function ActivityFeed({ accountId }: { accountId: string }) {
+export default function ActivityFeed({
+  accountId,
+  vestingContractId,
+}: {
+  accountId: string;
+  /**
+   * Vesting contract holding this token's grants, when one is known. Its
+   * events are folded into the same feed so a recipient has one audit trail
+   * covering both the token and the contract that holds their tokens.
+   */
+  vestingContractId?: string;
+}) {
   const { fetchAccountOperations } = useSoroban();
-  const { events: liveEvents } = useContractEvents(accountId, { intervalMs: 10000 });
   const [operations, setOperations] = useState<TokenActivityInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [liveStartLedger, setLiveStartLedger] = useState<number>();
+  const [windowStartLedger, setWindowStartLedger] = useState<number | null>(null);
+  const { events: liveEvents, droppedEventCount } = useContractEvents(
+    accountId,
+    {
+      intervalMs: 10000,
+      vestingContractId,
+      enabled: !loading,
+      startLedger: liveStartLedger,
+    },
+  );
 
   // Use refs to avoid closure stale state in intervals
   const cursorRef = useRef<string | null>(null);
@@ -39,20 +78,33 @@ export default function ActivityFeed({ accountId }: { accountId: string }) {
         // but for simplicity we'll just reload the first page if it's a refresh interval.
         const fetchCursor = isRefresh ? undefined : cursorToUse;
 
-        const { records, nextCursor: newCursor } = await fetchAccountOperations(
+        const result: AccountOperationsResult = await fetchAccountOperations(
           accountId,
           // networkConfig,
           fetchCursor ?? undefined,
           10,
         );
+        const { records, nextCursor: newCursor, windowStartLedger: newWindowStart } =
+          result;
 
         if (isLoadMore) {
           setOperations((prev) => [...prev, ...records]);
         } else {
+          // Only the first page carries the truncation signal; a cursor-based
+          // page continues from a known point and is not a fresh window.
+          if (!isRefresh) {
+            setWindowStartLedger(newWindowStart ?? null);
+          }
           // First load or Refresh
           // If refresh, we might want to smartly prepend, but replacing is simpler for pagination reset.
           // Actually, just leaving it be or updating if head is different is better UX.
           setOperations(records);
+          setLiveStartLedger(
+            records.reduce(
+              (latest, record) => Math.max(latest, record.ledger ?? 0),
+              0,
+            ) || undefined,
+          );
         }
 
         if (!isRefresh || isLoadMore) {
@@ -101,10 +153,31 @@ export default function ActivityFeed({ accountId }: { accountId: string }) {
     return <div className="p-4 text-center text-sm text-red-400">{error}</div>;
   }
 
+  const truncatedWindow =
+    windowStartLedger !== null && windowStartLedger > 1;
+
+  const truncationNotice = truncatedWindow ? (
+    <div className="flex items-start gap-2 border-b border-amber-400/20 bg-amber-400/10 px-4 py-3 text-xs text-amber-300">
+      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+      <p>
+        Showing activity from ledger {windowStartLedger} onward — roughly the
+        last 83 minutes. This is not the token&apos;s full history. Enable the
+        indexer (Mercury) to see complete history.
+      </p>
+    </div>
+  ) : null;
+
   if (operations.length === 0) {
     return (
       <div className="glass-card p-8 text-center text-sm text-gray-500">
-        No token activity found for this account/contract.
+        <p>No token activity found for this account/contract.</p>
+        {droppedEventCount > 0 && (
+          <p className="mt-2 text-amber-400">
+            The contract emitted {droppedEventCount} event
+            {droppedEventCount === 1 ? "" : "s"} this app does not decode.
+          </p>
+        )}
+        {truncationNotice}
       </div>
     );
   }
@@ -118,8 +191,92 @@ export default function ActivityFeed({ accountId }: { accountId: string }) {
         return <Flame className="h-4 w-4 text-red-400" />;
       case "transfer":
         return <ArrowLeftRight className="h-4 w-4 text-green-400" />;
+      case "freeze":
+        return <SnowflakeIcon className="h-4 w-4 text-cyan-400" />;
+      case "unfreeze":
+        return <SnowflakeIcon className="h-4 w-4 text-teal-400" />;
+      case "pause":
+        return <PauseCircle className="h-4 w-4 text-yellow-400" />;
+      case "unpause":
+        return <PlayCircle className="h-4 w-4 text-green-400" />;
+      case "authorize":
+        return <ShieldCheck className="h-4 w-4 text-emerald-400" />;
+      case "rev_auth":
+        return <ShieldOff className="h-4 w-4 text-orange-400" />;
+      case "set_admin":
+        return <UserCheck className="h-4 w-4 text-stellar-400" />;
+      case "revoked":
+        return <UserX className="h-4 w-4 text-red-400" />;
+      case "upgrade":
+        return <Upload className="h-4 w-4 text-purple-400" />;
+
+      // ── Vesting contract ──
+      case "vesting:create":
+        return <CalendarPlus className="h-4 w-4 text-blue-400" />;
+      case "vesting:batch":
+        return <Layers className="h-4 w-4 text-blue-400" />;
+      case "vesting:release":
+        return <HandCoins className="h-4 w-4 text-green-400" />;
+      case "vesting:revoke":
+        return <Ban className="h-4 w-4 text-red-400" />;
+      case "vesting:clf_ext":
+        return <CalendarClock className="h-4 w-4 text-amber-400" />;
+      case "vesting:prune":
+        return <Eraser className="h-4 w-4 text-gray-400" />;
+      case "vesting:prop_adm":
+        return <UserCog className="h-4 w-4 text-stellar-400" />;
+      case "vesting:acc_adm":
+        return <UserCheck className="h-4 w-4 text-stellar-400" />;
+      case "vesting:revoked":
+        return <UserX className="h-4 w-4 text-red-400" />;
+      case "vesting:init":
+        return <Rocket className="h-4 w-4 text-purple-400" />;
+      case "vesting:pause":
+        return <PauseCircle className="h-4 w-4 text-yellow-400" />;
+      case "vesting:unpause":
+        return <PlayCircle className="h-4 w-4 text-green-400" />;
+      case "vesting:upgrade":
+        return <Upload className="h-4 w-4 text-purple-400" />;
+
       default:
         return <ArrowRight className="h-4 w-4 text-gray-400" />;
+    }
+  };
+
+  const getTypeLabel = (type: string): string => {
+    switch (type) {
+      case "mint":          return "Mint";
+      case "burn":          return "Burn";
+      case "clawback":      return "Clawback";
+      case "transfer":      return "Transfer";
+      case "freeze":        return "Account frozen";
+      case "unfreeze":      return "Account unfrozen";
+      case "pause":         return "Token paused";
+      case "unpause":       return "Token unpaused";
+      case "authorize":     return "Authorized";
+      case "rev_auth":      return "Authorization revoked";
+      case "set_admin":     return "Admin set";
+      case "revoked":       return "Admin revoked";
+      case "upgrade":       return "Contract upgraded";
+
+      // ── Vesting contract ──
+      // Named so a reader can tell them apart from the token's own events:
+      // both contracts emit init, pause, unpause, prop_adm, revoked, upgrade.
+      case "vesting:create":   return "Vesting schedule created";
+      case "vesting:batch":    return "Vesting schedules created (batch)";
+      case "vesting:release":  return "Vested tokens released";
+      case "vesting:revoke":   return "Vesting revoked";
+      case "vesting:clf_ext":  return "Vesting cliff extended";
+      case "vesting:prune":    return "Vesting recipient pruned";
+      case "vesting:prop_adm": return "Vesting admin proposed";
+      case "vesting:acc_adm":  return "Vesting admin accepted";
+      case "vesting:revoked":  return "Vesting admin revoked";
+      case "vesting:init":     return "Vesting contract initialized";
+      case "vesting:pause":    return "Vesting paused";
+      case "vesting:unpause":  return "Vesting unpaused";
+      case "vesting:upgrade":  return "Vesting contract upgraded";
+
+      default:              return "Other";
     }
   };
 
@@ -129,9 +286,40 @@ export default function ActivityFeed({ accountId }: { accountId: string }) {
         return "text-blue-400 bg-blue-400/10 border-blue-400/20";
       case "burn":
       case "clawback":
+      case "revoked":
+      case "vesting:revoke":
+      case "vesting:revoked":
         return "text-red-400 bg-red-400/10 border-red-400/20";
       case "transfer":
+      case "unpause":
+      case "authorize":
+      case "vesting:release":
+      case "vesting:unpause":
         return "text-green-400 bg-green-400/10 border-green-400/20";
+      case "vesting:create":
+      case "vesting:batch":
+        return "text-blue-400 bg-blue-400/10 border-blue-400/20";
+      case "vesting:clf_ext":
+        return "text-amber-400 bg-amber-400/10 border-amber-400/20";
+      case "vesting:prop_adm":
+      case "vesting:acc_adm":
+        return "text-stellar-400 bg-stellar-400/10 border-stellar-400/20";
+      case "vesting:init":
+      case "vesting:upgrade":
+        return "text-purple-400 bg-purple-400/10 border-purple-400/20";
+      case "freeze":
+        return "text-cyan-400 bg-cyan-400/10 border-cyan-400/20";
+      case "unfreeze":
+        return "text-teal-400 bg-teal-400/10 border-teal-400/20";
+      case "pause":
+      case "vesting:pause":
+        return "text-yellow-400 bg-yellow-400/10 border-yellow-400/20";
+      case "rev_auth":
+        return "text-orange-400 bg-orange-400/10 border-orange-400/20";
+      case "set_admin":
+        return "text-stellar-400 bg-stellar-400/10 border-stellar-400/20";
+      case "upgrade":
+        return "text-purple-400 bg-purple-400/10 border-purple-400/20";
       default:
         return "text-gray-400 bg-gray-400/10 border-gray-400/20";
     }
@@ -139,6 +327,7 @@ export default function ActivityFeed({ accountId }: { accountId: string }) {
 
   return (
     <div className="glass-card overflow-hidden">
+      {truncationNotice}
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -174,14 +363,22 @@ export default function ActivityFeed({ accountId }: { accountId: string }) {
                     className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium capitalize ${getStyleForType(op.type)}`}
                   >
                     {getTypeIcon(op.type)}
-                    {op.type}
+                    {getTypeLabel(op.type)}
                   </div>
                 </td>
                 <td className="px-4 py-3 text-right font-mono text-white">
                   {op.amount !== "-" ? op.amount : "-"}
                 </td>
                 <td className="px-4 py-3 font-mono text-xs text-stellar-300">
-                  {op.from !== "-" ? (
+                  {op.subject ? (
+                    <ExplorerLink
+                      type="account"
+                      identifier={op.subject}
+                      truncate={true}
+                      truncateChars={5}
+                      showCopy={false}
+                    />
+                  ) : op.from !== "-" ? (
                     <ExplorerLink
                       type="account"
                       identifier={op.from}

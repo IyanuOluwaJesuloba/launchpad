@@ -10,6 +10,8 @@ import { NumericInput } from "@/components/ui/NumericInput";
 import { PreflightCheckDisplay } from "@/components/ui/PreflightCheck";
 import { useTransactionSimulator } from "@/hooks/useTransactionSimulator";
 import { AlertCircle, Flame } from "lucide-react";
+import { useToast } from "@/app/providers/ToastProvider";
+import { toBaseUnits } from "@/lib/utils";
 
 const burnSchema = z.object({
   tokenContractId: z.string().regex(/^C[A-Z0-9]{55}$/, "Invalid token contract ID"),
@@ -23,11 +25,13 @@ type BurnFormData = z.infer<typeof burnSchema>;
 
 interface BurnFormProps {
   adminAddress: string;
+  tokenDecimals: number;
   onSuccess?: (txHash: string) => void;
 }
 
-export function BurnForm({ adminAddress, onSuccess }: BurnFormProps) {
+export function BurnForm({ adminAddress, tokenDecimals, onSuccess }: BurnFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const toast = useToast();
   const [preflightResult, setPreflightResult] = useState<{
     isLoading: boolean;
     success: boolean;
@@ -61,7 +65,7 @@ export function BurnForm({ adminAddress, onSuccess }: BurnFormProps) {
       const result = await simulator.checkBurn(
         formData.tokenContractId,
         formData.fromAddress,
-        BigInt(Math.floor(parseFloat(formData.amount) * 1e7)),
+        toBaseUnits(formData.amount, tokenDecimals),
         adminAddress,
       );
 
@@ -82,15 +86,18 @@ export function BurnForm({ adminAddress, onSuccess }: BurnFormProps) {
     }
   };
 
-  const onSubmit = async (data: BurnFormData) => {
+  const onSubmit = async (_data: BurnFormData) => {
     if (!preflightResult?.success) {
-      alert("Please run pre-flight check first");
+      toast.show({
+        title: "Pre-flight Check Required",
+        message: "Run the pre-flight check first",
+        variant: "warning",
+      });
       return;
     }
 
     setIsSubmitting(true);
     try {
-      console.log("Submitting burn transaction:", data);
       onSuccess?.("0x...");
     } catch (error) {
       console.error("Failed to submit transaction:", error);

@@ -23,21 +23,71 @@ import { ArrowLeft, ArrowRight, Rocket, Wallet } from "lucide-react";
 import { useNetwork } from "@/app/providers/NetworkProvider";
 import { useToast } from "@/app/providers/ToastProvider";
 import { useDeployToken, type DeployTokenError } from "../hooks/useDeployToken";
+import { toBaseUnits } from "@/lib/utils";
 
-const optionalNumber = (schema: z.ZodNumber) =>
-  z.preprocess((value) => {
+/**
+ * Wraps `toBaseUnits` so that a `RangeError` (too many decimal places for the
+ * selected token precision) is surfaced as a validation failure instead of an
+ * uncaught exception. Returns `null` when the value cannot be represented.
+ */
+const tryToBaseUnits = (value: string, decimals: number): bigint | null => {
+  try {
+    return toBaseUnits(value, decimals);
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Preview-safe conversion used during render. Never throws: if the value
+ * cannot be represented at the selected precision, the raw string is returned
+ * so the user can see what they typed.
+ */
+const previewBaseUnits = (value: string | undefined, decimals: number): string => {
+  if (value == null || value === "") return "";
+  const parsed = tryToBaseUnits(value, decimals);
+  return parsed === null ? value : parsed.toString();
+};
+
+const integerString = z
+  .string()
+  .min(1, "Initial supply is required")
+  .regex(/^[0-9]+$/, "Initial supply must be a whole number")
+  .refine((value) => {
+    try {
+      return BigInt(value) > 0n;
+    } catch {
+      return false;
+    }
+  }, { message: "Initial supply must be at least 1" })
+  .max(38, "Initial supply is too large");
+
+const optionalIntegerString = z.preprocess(
+  (value) => {
     if (value === "" || value === null || value === undefined) return undefined;
-    if (typeof value === "number" && Number.isNaN(value)) return undefined;
-    return Number(value);
-  }, schema.optional());
+    return typeof value === "string" ? value.trim() : value;
+  },
+  z
+    .string()
+    .regex(/^[0-9]+$/, "Max supply must be a whole number")
+    .refine((value) => {
+      try {
+        return BigInt(value) > 0n;
+      } catch {
+        return false;
+      }
+    }, { message: "Max supply must be at least 1" })
+    .max(38, "Max supply is too large")
+    .optional(),
+);
 
 const deploySchema = z
   .object({
     name: z.string().min(1, "Token name is required").max(32, "Name too long"),
     symbol: z.string().min(1, "Symbol is required").max(12, "Symbol too long"),
     decimals: z.number().min(0).max(14),
-    initialSupply: z.number().min(1, "Initial supply must be at least 1"),
-    maxSupply: optionalNumber(z.number().min(1, "Max supply must be at least 1")),
+    initialSupply: integerString,
+    maxSupply: optionalIntegerString,
     adminAddress: z
       .string()
       .regex(/^[GC][A-Z2-7]{55}$/, "Invalid Stellar address or contract ID"),
@@ -57,10 +107,14 @@ const deploySchema = z
     twitter: z.string().optional(),
     discord: z.string().optional(),
   })
-  .refine((data) => !data.maxSupply || data.initialSupply <= data.maxSupply, {
-    message: "Initial supply cannot exceed maximum supply",
-    path: ["initialSupply"],
-  });
+  .refine(
+    (data) =>
+      data.maxSupply == null || BigInt(data.initialSupply) <= BigInt(data.maxSupply),
+    {
+      message: "Initial supply cannot exceed maximum supply",
+      path: ["initialSupply"],
+    },
+  );
 
 export type DeployFormData = z.infer<typeof deploySchema>;
 
@@ -100,7 +154,8 @@ export default function DeployForm() {
     mode: "onChange",
     defaultValues: {
       decimals: 7,
-      initialSupply: 0,
+      initialSupply: "",
+      maxSupply: undefined,
       name: "",
       symbol: "",
       adminAddress: publicKey ?? "",
@@ -141,6 +196,11 @@ export default function DeployForm() {
     }
   };
 
+  const scaleSupplyValue = (value: string, decimals: number) => {
+    if (decimals === 0) return BigInt(value);
+    return BigInt(value + "0".repeat(decimals));
+  };
+
   const estimateFee = async () => {
     const formData = watch();
     if (!formData.adminAddress || !formData.name || !formData.symbol) return;
@@ -155,9 +215,9 @@ export default function DeployForm() {
         formData.name,
         formData.symbol,
         formData.decimals,
-        BigInt(Math.round((formData.initialSupply ?? 0) * 10 ** formData.decimals)),
+        toBaseUnits(formData.initialSupply ?? 0, formData.decimals),
         formData.maxSupply != null
-          ? BigInt(Math.round(formData.maxSupply * 10 ** formData.decimals))
+          ? toBaseUnits(formData.maxSupply, formData.decimals)
           : null,
         formData.authorizationRequired ?? false,
         formData.authorizationRevocable ?? false,
@@ -183,6 +243,43 @@ export default function DeployForm() {
     setCurrentStep((prev) => Math.max(prev - 1, 1));
   };
 
+  /**
+   * Client-side bookkeeping once a deploy transaction has been submitted:
+   * pending metadata, the per-wallet cooldown, and the user's deployment list.
+   */
+  const recordDeployment = (data: DeployFormData, contractId: string) => {
+    // Save metadata client-side
+    try {
+      savePendingMetadata(data.symbol, {
+        description: data.description,
+        logoUrl: data.logoUrl,
+        website: data.website,
+        twitter: data.twitter,
+        discord: data.discord,
+      });
+    } catch {
+      // Ignore metadata save errors
+    }
+
+    // Set client-side deploy cooldown (per-wallet)
+    try {
+      const key = `soropad:lastDeploy:${publicKey ?? "anonymous"}`;
+      localStorage.setItem(key, Date.now().toString());
+
+      // Track deployment for user dashboard
+      if (publicKey) {
+        trackDeployment(publicKey, {
+          contractId,
+          name: data.name,
+          symbol: data.symbol,
+          network: networkConfig.network,
+        });
+      }
+    } catch {
+      // Ignore tracking errors
+    }
+  };
+
   const onSubmit = async (data: DeployFormData) => {
     setIsDeploying(true);
     setAnnouncement("Deploying token transaction.");
@@ -200,8 +297,11 @@ export default function DeployForm() {
         symbol: data.symbol,
         decimals: data.decimals,
         initialSupply: data.initialSupply,
-        maxSupply: data.maxSupply,
+        maxSupply: data.maxSupply != null ? data.maxSupply : undefined,
         adminAddress: data.adminAddress,
+        authorizationRequired: data.authorizationRequired ?? false,
+        authorizationRevocable: data.authorizationRevocable ?? false,
+        complianceNodeAddress: data.complianceNodeAddress || undefined,
       });
 
       setPreflightResult({
@@ -214,36 +314,7 @@ export default function DeployForm() {
         `Token deployed successfully. Transaction hash ${result.transactionHash}.`,
       );
 
-      // Save metadata client-side
-      try {
-        savePendingMetadata(data.symbol, {
-          description: data.description,
-          logoUrl: data.logoUrl,
-          website: data.website,
-          twitter: data.twitter,
-          discord: data.discord,
-        });
-      } catch {
-        // Ignore metadata save errors
-      }
-
-      // Set client-side deploy cooldown (per-wallet)
-      try {
-        const key = `soropad:lastDeploy:${publicKey ?? "anonymous"}`;
-        localStorage.setItem(key, Date.now().toString());
-
-        // Track deployment for user dashboard
-        if (publicKey) {
-          trackDeployment(publicKey, {
-            contractId: result.contractId,
-            name: data.name,
-            symbol: data.symbol,
-            network: networkConfig.network,
-          });
-        }
-      } catch {
-        // Ignore tracking errors
-      }
+      recordDeployment(data, result.contractId);
 
       toast.show({
         title: "Token deployed successfully",
@@ -256,6 +327,31 @@ export default function DeployForm() {
     } catch (err) {
       // Handle deployment errors
       const error = err as DeployTokenError;
+
+      // Polling ran out but the address is already known from simulation,
+      // so it is authoritative whether or not the transaction has landed:
+      // send the user to the dashboard (which shows zero supply if it did
+      // not) instead of an error state they cannot act on.
+      if (error.type === "timeout" && error.contractId) {
+        recordDeployment(data, error.contractId);
+        setPreflightResult({
+          isLoading: false,
+          success: false,
+          errors: [],
+          warnings: [error.message],
+        });
+        setAnnouncement(`Deployment not yet confirmed. ${error.message}`);
+        toast.show({
+          title: "Deployment submitted, confirmation pending",
+          message: error.message,
+          variant: "warning",
+          duration: 12_000,
+          txHash: error.transactionHash,
+        });
+        router.push(`/dashboard/${error.contractId}`);
+        return;
+      }
+
       const errorDetails: string[] = [];
 
       if (error.type === "validation") {
@@ -437,9 +533,9 @@ export default function DeployForm() {
                       formData.name,
                       formData.symbol,
                       formData.decimals,
-                      BigInt(Math.round((formData.initialSupply ?? 0) * 10 ** formData.decimals)),
+                      toBaseUnits(formData.initialSupply ?? 0, formData.decimals),
                       formData.maxSupply != null
-                        ? BigInt(Math.round(formData.maxSupply * 10 ** formData.decimals))
+                        ? toBaseUnits(formData.maxSupply, formData.decimals)
                         : null,
                       formData.authorizationRequired ?? false,
                       formData.authorizationRevocable ?? false,

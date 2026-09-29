@@ -37,6 +37,8 @@ const ERROR_MESSAGE_MAP: Record<string, string> = {
   "schedule has been revoked": "This vesting schedule has been revoked.",
   "nothing to release": "No vested tokens are available to release.",
   "schedule already revoked": "This schedule has already been revoked.",
+  "batch size exceeds maximum of 50": "Batch size exceeds the maximum of 50 schedules.",
+  "schedules cannot be empty": "At least one schedule is required.",
   "end_ledger must be after cliff_ledger": "End ledger must be after cliff ledger.",
   "total_amount must be positive": "Total amount must be greater than zero.",
   "Invalid Stellar public key": "The provided Stellar address is not valid.",
@@ -364,7 +366,7 @@ export async function simulateTokenDeployment(
     // Build the ScVal arguments that match the contract's initialize
     // signature: (admin, decimal, name, symbol, initial_supply, max_supply,
     //             authorization_required, authorization_revocable,
-    //             compliance_node)
+    //             compliance_node, contract_uri)
     const maxSupplyScVal =
       maxSupply !== null
         ? StellarSdk.nativeToScVal(maxSupply, { type: "i128" })
@@ -384,6 +386,7 @@ export async function simulateTokenDeployment(
       StellarSdk.nativeToScVal(authorizationRequired, { type: "bool" }),
       StellarSdk.nativeToScVal(authorizationRevocable, { type: "bool" }),
       complianceNodeScVal,
+      StellarSdk.xdr.ScVal.scvVoid(),
     ];
 
     const account = new StellarSdk.Account(sourceAddress, "0");
@@ -400,7 +403,7 @@ export async function simulateTokenDeployment(
 
     let estimatedFee = "0.01";
     let simulationCost = "0.01";
-    const simulationFootprint = "";
+    let simulationFootprint = "";
     
     if (StellarSdk.rpc.Api.isSimulationSuccess(sim)) {
       try {
@@ -409,6 +412,9 @@ export async function simulateTokenDeployment(
         const totalFee = (minResourceFee + baseFee) / 10_000_000;
         estimatedFee = totalFee >= 1 ? totalFee.toFixed(2) : totalFee.toFixed(4);
         simulationCost = estimatedFee;
+        if (sim.transactionData) {
+          simulationFootprint = sim.transactionData.getFootprint().toString();
+        }
       } catch {
         estimatedFee = "0.01";
       }
@@ -498,8 +504,32 @@ export async function simulateApprove(
 }
 
 /**
+ * Build the ScVal arguments for revoking an allowance on a SEP-41 token.
+ *
+ * Revoke is implemented as `approve` with amount = 0. The contract's
+ * `if amount == 0` branch ignores `expiration_ledger`, so we pass 0
+ * for both parameters. Any caller that builds an `approve` transaction
+ * or simulation to revoke an allowance MUST use this helper so that
+ * the preflight and the real submission stay in sync.
+ *
+ * See `contracts/token/src/lib.rs` — the `if amount == 0` branch.
+ */
+export function buildRevokeAllowanceArgs(
+  ownerAddress: string,
+  spenderAddress: string,
+): StellarSdk.xdr.ScVal[] {
+  return [
+    new StellarSdk.Address(ownerAddress).toScVal(),
+    new StellarSdk.Address(spenderAddress).toScVal(),
+    StellarSdk.nativeToScVal(BigInt(0), { type: "i128" }),
+    StellarSdk.nativeToScVal(BigInt(0), { type: "u32" }),
+  ];
+}
+
+/**
  * Simulate a token revoke allowance pre-flight check.
- * Revoke is implemented as approve with 0 amount.
+ * Revoke is implemented as approve with 0 amount — see
+ * `buildRevokeAllowanceArgs` for details.
  */
 export async function simulateRevokeAllowance(
   contractId: string,
@@ -515,12 +545,7 @@ export async function simulateRevokeAllowance(
     };
   }
 
-  const args = [
-    new StellarSdk.Address(ownerAddress).toScVal(),
-    new StellarSdk.Address(spenderAddress).toScVal(),
-    StellarSdk.nativeToScVal(BigInt(0), { type: "i128" }),
-    StellarSdk.nativeToScVal(BigInt(1000), { type: "u32" }),
-  ];
+  const args = buildRevokeAllowanceArgs(ownerAddress, spenderAddress);
 
   return simulateTransaction(contractId, "approve", args, config, ownerAddress);
 }

@@ -28,6 +28,18 @@ export interface VestingInfo {
   vestedAmount: bigint;
   releasableAmount: bigint;
   currentLedger: number;
+  isPaused: boolean;
+}
+
+export interface VestingAdminState {
+  admin: string | null;
+  pendingAdmin: string | null;
+}
+
+export interface VestingSolvency {
+  tokenBalance: bigint;
+  totalCommitted: bigint;
+  solvent: boolean;
 }
 
 /* ── XDR Decoders ──────────────────────────────────────────────────── */
@@ -49,6 +61,22 @@ function decodeAddress(val: StellarSdk.xdr.ScVal): string {
 
 function decodeBool(val: StellarSdk.xdr.ScVal): boolean {
   return val.b();
+}
+
+function decodeSolvency(val: StellarSdk.xdr.ScVal): VestingSolvency {
+  const fields = val.map();
+  if (!fields) throw new Error("Unexpected result type from solvency");
+
+  const fieldMap = new Map<string, StellarSdk.xdr.ScVal>();
+  for (const entry of fields) {
+    fieldMap.set(entry.key().sym().toString(), entry.val());
+  }
+
+  return {
+    tokenBalance: decodeI128(fieldMap.get("token_balance")!),
+    totalCommitted: decodeI128(fieldMap.get("total_committed")!),
+    solvent: decodeBool(fieldMap.get("solvent")!),
+  };
 }
 
 /* ── Simulate a read-only contract call ────────────────────────────── */
@@ -92,6 +120,18 @@ function toU32ScVal(value: number): StellarSdk.xdr.ScVal {
     throw new Error("Invalid u32 value");
   }
   return StellarSdk.nativeToScVal(BigInt(value), { type: "u32" });
+}
+
+async function fetchOptionalAddress(
+  contractId: string,
+  method: string,
+): Promise<string | null> {
+  try {
+    const result = await simulateCall(contractId, method);
+    return decodeAddress(result);
+  } catch {
+    return null;
+  }
 }
 
 export async function fetchScheduleCount(
@@ -194,31 +234,120 @@ export async function fetchReleasedAmount(
   return decodeI128(result);
 }
 
-/** Fetch combined vesting info in a single call batch. */
+/** Entries per `get_schedules_paginated` call. Matches the dashboard page size. */
+const SCHEDULE_PAGE_SIZE = 20;
+
+/**
+ * Fetch all vesting schedules for a recipient.
+ *
+ * Pages through `get_schedules_paginated` rather than calling
+ * `get_all_schedules` (#466). The contract caps a recipient at
+ * `MAX_SCHEDULES_PER_RECIPIENT` schedules, so the aggregate getter is now
+ * bounded — but one response carrying the whole set still costs the recipient
+ * a simulation proportional to their total grants, and the UI only renders a
+ * screenful at a time. Paging keeps each response small and the per-call work
+ * constant as grants accumulate.
+ *
+ * Pages are followed until one comes back shorter than the page size, which is
+ * the only reliable "no more" signal: a short page can still be followed by
+ * more entries.
+ */
+export async function fetchAllVestingSchedules(
+  contractId: string,
+  recipientAddress: string,
+): Promise<VestingSchedule[]> {
+  const addressVal = new StellarSdk.Address(recipientAddress).toScVal();
+  const schedules: VestingSchedule[] = [];
+
+  for (let start = 0; ; start += SCHEDULE_PAGE_SIZE) {
+    const result = await simulateCall(contractId, "get_schedules_paginated", [
+      addressVal,
+      toU32ScVal(start),
+      toU32ScVal(SCHEDULE_PAGE_SIZE),
+    ]);
+
+    const page = result.vec();
+    const decoded: VestingSchedule[] = [];
+    if (page) {
+      for (const entry of page) {
+        const fields = entry.map();
+        if (!fields) continue;
+        const fieldMap = new Map<string, StellarSdk.xdr.ScVal>();
+        for (const f of fields) {
+          fieldMap.set(f.key().sym().toString(), f.val());
+        }
+        decoded.push({
+          recipient: decodeAddress(fieldMap.get("recipient")!),
+          totalAmount: decodeI128(fieldMap.get("total_amount")!),
+          cliffLedger: decodeU32(fieldMap.get("cliff_ledger")!),
+          endLedger: decodeU32(fieldMap.get("end_ledger")!),
+          released: decodeI128(fieldMap.get("released")!),
+          revoked: decodeBool(fieldMap.get("revoked")!),
+        });
+      }
+    }
+
+    schedules.push(...decoded);
+    if (decoded.length < SCHEDULE_PAGE_SIZE) break;
+  }
+
+  return schedules;
+}
+
+/** Fetch vesting info for a specific schedule (backward compat: uses single schedule). */
 export async function fetchVestingInfo(
   contractId: string,
   recipientAddress: string,
   scheduleIndex?: number,
 ): Promise<VestingInfo> {
-  const resolvedIndex = await resolveScheduleIndex(
-    contractId,
-    recipientAddress,
-    scheduleIndex,
-  );
-  const [schedule, vestedAmount] = await Promise.all([
-    fetchVestingSchedule(contractId, recipientAddress, resolvedIndex),
-    fetchVestedAmount(contractId, recipientAddress, resolvedIndex),
+  const addressVal = new StellarSdk.Address(recipientAddress).toScVal();
+
+  const [schedule, vestedAmount, totalReleasable] = await Promise.all([
+    fetchVestingSchedule(contractId, recipientAddress, scheduleIndex),
+    fetchVestedAmount(contractId, recipientAddress, scheduleIndex),
+    simulateCall(contractId, "total_releasable", [addressVal]).then(decodeI128),
   ]);
 
-  const releasableAmount = vestedAmount - schedule.released;
   const latestLedger = await server.getLatestLedger();
+
+  let isPaused = false;
+  try {
+    const pausedVal = await simulateCall(contractId, "is_paused", []);
+    isPaused = decodeBool(pausedVal);
+  } catch {
+    // is_paused not implemented on this vesting contract; assume not paused.
+  }
 
   return {
     schedule,
     vestedAmount,
-    releasableAmount,
+    releasableAmount: totalReleasable,
     currentLedger: latestLedger.sequence,
+    isPaused,
   };
+}
+
+/** Fetch the vesting contract's admin and any pending admin proposal. */
+export async function fetchVestingAdminState(
+  contractId: string,
+): Promise<VestingAdminState> {
+  const [admin, pendingAdmin] = await Promise.all([
+    fetchOptionalAddress(contractId, "get_admin"),
+    fetchOptionalAddress(contractId, "pending_admin"),
+  ]);
+
+  return { admin, pendingAdmin };
+}
+
+/** Fetch live vesting solvency when supported by the deployed contract. */
+export async function fetchVestingSolvency(
+  contractId: string,
+): Promise<VestingSolvency | null> {
+  try {
+    return decodeSolvency(await simulateCall(contractId, "solvency"));
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -245,6 +374,44 @@ export async function buildReleaseTx(
     networkPassphrase: NETWORK_PASSPHRASE,
   })
     .addOperation(contract.call("release", addressVal, toU32ScVal(resolvedIndex)))
+    .setTimeout(300)
+    .build();
+
+  const sim = await server.simulateTransaction(tx);
+
+  if (StellarSdk.rpc.Api.isSimulationError(sim)) {
+    throw new Error(
+      `Simulation failed: ${(sim as StellarSdk.rpc.Api.SimulateTransactionErrorResponse).error}`,
+    );
+  }
+
+  const preparedTx = StellarSdk.rpc.assembleTransaction(
+    tx,
+    sim as StellarSdk.rpc.Api.SimulateTransactionSuccessResponse,
+  ).build();
+
+  return preparedTx.toXDR();
+}
+
+/**
+ * Build a release_all() transaction XDR for signing.
+ * Releases all unlocked tokens across all schedules in a single transfer.
+ * The caller should sign via wallet and then submit.
+ */
+export async function buildReleaseAllTx(
+  contractId: string,
+  recipientAddress: string,
+  signerAddress: string,
+): Promise<string> {
+  const account = await server.getAccount(signerAddress);
+  const contract = new StellarSdk.Contract(contractId);
+  const addressVal = new StellarSdk.Address(recipientAddress).toScVal();
+
+  const tx = new StellarSdk.TransactionBuilder(account, {
+    fee: "100",
+    networkPassphrase: NETWORK_PASSPHRASE,
+  })
+    .addOperation(contract.call("release_all", addressVal))
     .setTimeout(300)
     .build();
 
@@ -320,3 +487,30 @@ export function truncateAddress(
   if (addr.length <= chars * 2 + 1) return addr;
   return `${addr.slice(0, chars)}…${addr.slice(-chars)}`;
 }
+
+/**
+ * Client-side estimate of the vested amount using the cliff + linear formula.
+ *
+ * This is ONLY for UI animations and "next unlock" previews between RPC polls.
+ * It must NOT be used to display the canonical vested amount to the user —
+ * call the contract's `vested_amount` getter for that. The on-chain formula
+ * is the source of truth and may diverge from this copy if issues #356 or
+ * #357 change the contract logic.
+ *
+ * To catch drift early: if you extend this function, add a fixture test
+ * generated from the contract's own test snapshots so CI fails before
+ * the discrepancy ships.
+ */
+export function estimateVestedAmount(
+  totalAmount: bigint,
+  cliffLedger: number,
+  endLedger: number,
+  currentLedger: number,
+): bigint {
+  if (currentLedger < cliffLedger) return 0n;
+  if (currentLedger >= endLedger) return totalAmount;
+  const elapsed = BigInt(currentLedger - cliffLedger);
+  const duration = BigInt(endLedger - cliffLedger);
+  return (totalAmount * elapsed) / duration;
+}
+
