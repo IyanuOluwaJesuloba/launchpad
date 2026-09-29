@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { AlertTriangle } from "lucide-react";
 import {
   ArrowRight,
   Loader2,
@@ -25,6 +26,7 @@ import {
   Rocket,
 } from "lucide-react";
 import {
+  type AccountOperationsResult,
   type TokenActivityInfo,
 } from "@/lib/stellar";
 import { ExplorerLink } from "@/components/ui/ExplorerLink";
@@ -50,6 +52,7 @@ export default function ActivityFeed({
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [liveStartLedger, setLiveStartLedger] = useState<number>();
+  const [windowStartLedger, setWindowStartLedger] = useState<number | null>(null);
   const { events: liveEvents, droppedEventCount } = useContractEvents(
     accountId,
     {
@@ -75,16 +78,23 @@ export default function ActivityFeed({
         // but for simplicity we'll just reload the first page if it's a refresh interval.
         const fetchCursor = isRefresh ? undefined : cursorToUse;
 
-        const { records, nextCursor: newCursor } = await fetchAccountOperations(
+        const result: AccountOperationsResult = await fetchAccountOperations(
           accountId,
           // networkConfig,
           fetchCursor ?? undefined,
           10,
         );
+        const { records, nextCursor: newCursor, windowStartLedger: newWindowStart } =
+          result;
 
         if (isLoadMore) {
           setOperations((prev) => [...prev, ...records]);
         } else {
+          // Only the first page carries the truncation signal; a cursor-based
+          // page continues from a known point and is not a fresh window.
+          if (!isRefresh) {
+            setWindowStartLedger(newWindowStart ?? null);
+          }
           // First load or Refresh
           // If refresh, we might want to smartly prepend, but replacing is simpler for pagination reset.
           // Actually, just leaving it be or updating if head is different is better UX.
@@ -143,6 +153,20 @@ export default function ActivityFeed({
     return <div className="p-4 text-center text-sm text-red-400">{error}</div>;
   }
 
+  const truncatedWindow =
+    windowStartLedger !== null && windowStartLedger > 1;
+
+  const truncationNotice = truncatedWindow ? (
+    <div className="flex items-start gap-2 border-b border-amber-400/20 bg-amber-400/10 px-4 py-3 text-xs text-amber-300">
+      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+      <p>
+        Showing activity from ledger {windowStartLedger} onward — roughly the
+        last 83 minutes. This is not the token&apos;s full history. Enable the
+        indexer (Mercury) to see complete history.
+      </p>
+    </div>
+  ) : null;
+
   if (operations.length === 0) {
     return (
       <div className="glass-card p-8 text-center text-sm text-gray-500">
@@ -153,6 +177,7 @@ export default function ActivityFeed({
             {droppedEventCount === 1 ? "" : "s"} this app does not decode.
           </p>
         )}
+        {truncationNotice}
       </div>
     );
   }
@@ -302,6 +327,7 @@ export default function ActivityFeed({
 
   return (
     <div className="glass-card overflow-hidden">
+      {truncationNotice}
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
