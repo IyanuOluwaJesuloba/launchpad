@@ -4,11 +4,13 @@ An open-source, full-stack platform for deploying and managing SEP-41 compliant 
 
 Built for founders, DAOs, and developers who need a clean interface to launch tokens with vesting schedules, mint/burn controls, and treasury management.
 
-> **Scope:** SoroPad deploys and manages tokens. It does not create a market for them — there is no liquidity pool, swap, or price quote. To trade a token you launch, list it on a Stellar DEX or AMM of your choice. See [PRD.md](PRD.md) §4.
+> **Scope:** SoroPad deploys and manages tokens. It does not create a market for them — there is no liquidity pool, swap, or price quote. To trade a token you launch, list it on a Stellar DEX or AMM of your choice. See [PRD.md](PRD.md) ®4.
+
+> **Risk notice:** Transactions are submitted through your wallet and may be irreversible. Tokens can be volatile or lose all value. SoroPad does not provide custody, warranties, or financial advice. See [RISK.md](RISK.md).
 
 ---
 
-## ✨ Features
+## 🨆 Features
 
 - One-click SEP-41 token deployment on Soroban
 - Configurable supply, decimals, and max cap
@@ -29,12 +31,12 @@ Built for founders, DAOs, and developers who need a clean interface to launch to
 | Frontend | Next.js 16 (16.1.6) + React 19 + TypeScript |
 | Styling | Tailwind CSS |
 | Wallet | Freighter API |
-| RPC | Stellar Horizon + Soroban RPC |
+| Quote | Stellar Horizon + Soroban RPC |
 | Testing | Soroban CLI + Jest |
 
 ---
 
-## 📁 Project Structure
+## 📄 Project Structure
 soroban-token-launchpad/
 ├── contracts/
 │   ├── token/              # SEP-41 token contract (Rust)
@@ -55,7 +57,7 @@ soroban-token-launchpad/
 
 ---
 
-## 🚀 Getting Started
+## 🚀  Getting Started
 
 ### Prerequisites
 
@@ -66,7 +68,7 @@ soroban-token-launchpad/
 ### Install
 
 ```bash
-git clone [https://github.com/soropad/launchpad.git](https://github.com/soropad/launchpad.git)
+git clone https://github.com/soropad/launchpad.git
 cd launchpad/frontend
 npm install
 Run locally
@@ -79,10 +81,13 @@ cd frontend && npm run dev
 Deploy to testnet
 Bash
 npm run deploy:testnet
-🤝 Contributing
+🤍 Contributing
 Contributions are welcome! Many issues are tagged good first issue and available through the Stellar Wave Program on Drips.
 
 See CONTRIBUTING.md for setup and PR guidelines.
 
 📄 License
 MIT
+```
+
+See also [RISK.md](RISK.md), [PRIVACY.md](PRIVACY.md), and [TERMS.md](TERMS.md).
