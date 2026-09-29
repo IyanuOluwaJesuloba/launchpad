@@ -115,6 +115,21 @@ export interface TransactionItem {
   id: string;
 }
 
+/**
+ * Metadata describing how much of a contract's history a page actually covers.
+ *
+ * When Mercury is unavailable the RPC fallback can only read back to the
+ * oldest ledger still retained by the node (roughly 1000 ledgers, ~83
+ * minutes). Callers must surface this so the UI does not present a truncated
+ * window as the token's complete history.
+ */
+export interface HistoryWindow {
+  /** Oldest ledger included in this page, or null when unknown. */
+  startLedger: number | null;
+  /** True when the page does not reach back to the contract's first ledger. */
+  truncated: boolean;
+}
+
 export interface TokenAllowanceInfo {
   spenderAddress: string;
   amount: string;
@@ -1486,7 +1501,11 @@ export async function fetchTransactionHistory(
   contractId: string,
   config: NetworkConfig,
   options: { cursor?: string; limit?: number } = {},
-): Promise<{ items: TransactionItem[]; nextCursor: string | null }> {
+): Promise<{
+  items: TransactionItem[];
+  nextCursor: string | null;
+  window: HistoryWindow;
+}> {
   const { cursor, limit = 200 } = options;
 
   const topicFilters = TRACKED_EVENT_TOPICS.map(encodeTopicSymbol);
@@ -1551,7 +1570,31 @@ export async function fetchTransactionHistory(
     items.push(item as TransactionItem);
   }
 
-  return { items: items.reverse(), nextCursor };
+  // The RPC fallback anchors its no-cursor scan ~1000 ledgers behind the head
+  // (see indexer.ts). Surface the oldest ledger we actually saw so callers can
+  // tell the user the window is truncated rather than presenting it as the
+  // token's full history. A cursor means the caller is paging through an
+  // already-established window, so we only compute this on the first page.
+  const window = computeHistoryWindow(events, cursor);
+
+  return { items: items.reverse(), nextCursor, window };
+}
+
+function computeHistoryWindow(
+  events: { ledger: number }[],
+  cursor: string | undefined,
+): HistoryWindow {
+  if (cursor) {
+    return { startLedger: null, truncated: false };
+  }
+  if (events.length === 0) {
+    return { startLedger: null, truncated: false };
+  }
+  const startLedger = events.reduce(
+    (min, e) => (e.ledger < min ? e.ledger : min),
+    events[0].ledger,
+  );
+  return { startLedger, truncated: true };
 }
 
 export type TokenActivityType =
@@ -1582,7 +1625,11 @@ export async function fetchAccountOperations(
   config: NetworkConfig,
   cursor?: string,
   limit = 10,
-): Promise<{ records: TokenActivityInfo[]; nextCursor: string | null }> {
+): Promise<{
+  records: TokenActivityInfo[];
+  nextCursor: string | null;
+  window: HistoryWindow;
+}> {
   try {
     // For contract IDs, use indexer events instead of Horizon.
     if (accountId.startsWith("C")) {
@@ -1614,14 +1661,18 @@ export async function fetchAccountOperations(
         if (decoded) records.push(decoded);
       }
 
-      return { records, nextCursor: nextIndexerCursor };
+      return {
+        records,
+        nextCursor: nextIndexerCursor,
+        window: computeHistoryWindow(events, cursor),
+      };
     }
 
     const horizon = new StellarSdk.Horizon.Server(getHorizonUrl());
 
     // Horizon's .forAccount() only accepts Ed25519 public keys (starting with G).
     if (!accountId.startsWith("G") && !accountId.startsWith("M")) {
-      return { records: [], nextCursor: null };
+      return { records: [], nextCursor: null, window: { startLedger: null, truncated: false } };
     }
 
     let callBuilder = horizon
@@ -1730,10 +1781,14 @@ export async function fetchAccountOperations(
     // Filter out "other" if we only want token activity, but keeping it helps visibility
     const filtered = parsed.filter((p) => p.type !== "other");
 
-    return { records: filtered.length > 0 ? filtered : parsed, nextCursor };
+    return {
+      records: filtered.length > 0 ? filtered : parsed,
+      nextCursor,
+      window: { startLedger: null, truncated: false },
+    };
   } catch (error) {
     console.error("Error fetching account operations from Horizon:", error);
-    return { records: [], nextCursor: null };
+    return { records: [], nextCursor: null, window: { startLedger: null, truncated: false } };
   }
 }
 
