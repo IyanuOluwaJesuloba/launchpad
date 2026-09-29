@@ -2,50 +2,47 @@
 
 _Last updated: 2025-01-01._
 
-By using SoroPad, you agree to these terms. If you do not agree, do not use the interface.
+These terms govern your use of SoroPad, an open-source interface for deploying and managing SEP-41 tokens on the Stellar Soroban smart contract platform. By using the interface, you agree to these terms. If you do not agree, do not use the interface.
 
-## 1. The Software
+---
 
-SoroPad is open-source software released under the MIT License. You may run it, modify it, and distribute it under the terms of that license.
+## 1. The software
 
-## 2. Your Responsibilities
+SoroPad is free and open-source software released under the MIT License. You may run it, modify it, and redistribute it under the terms of that licence. You may also run your own instance of the interface against the same contracts.
 
-When you use SoroPad to deploy or manage a token, you are responsible for:
+## 2. No service relationship
 
-- The accuracy of every parameter you submit (name, symbol, decimals, supply, max cap, admin address, vesting schedules).
-- Ensuring you have the legal right to issue the token and to grant the vesting schedules you configure.
-- Complying with all laws applicable to you, including securities, tax, anti-money-laundering, and consumer-protection law.
-- Maintaining the security of your own wallet and keys.
+SoroPad is not a broker, dealer, exchange, custodian, transfer agent, or fiduciary. You do not enter into a custodial relationship with SoroPad by using the interface. SoroPad never holds, controls, or moves your assets.
 
-## 3. Prohibited Use
+## 3. Your responsibilities
 
-You must not use SoroPad to:
+You are solely responsible for:
 
-- Deploy tokens that fraudulently misrepresent their ownership, supply, or purpose.
-- Engage in market manipulation, wash trading, or any illegal financial activity.
-- Violate sanctions laws or transfer assets to sanctioned parties.
-- Infringe the rights of others, including intellectual property rights.
+- The security of your wallet and keys.
+- The accuracy of every transaction you sign, including deployment parameters, mint amounts, vesting schedules, and ownership transfers.
+- Compliance with every law and regulation that applies to you and to the tokens you issue, including securities, consumer-protection, tax, and anti-money-laundering law.
+- Any disclosures or filings required in your jurisdiction, including a MiCA whitepaper or MiCA assessment where applicable.
 
-## 4. No Warranty
+## 4. No advice
 
-SoroPad is provided "as is" and "as available," without warranty of any kind. The authors and contributors do not warrant that the software is free of defects, that deployments will succeed, or that any token will have value.
+Nothing in the interface or this repository is financial, investment, legal, tax, or accounting advice. See [`RISK.md`](RISK.md) for the full risk notice.
 
-## 5. Limitation of Liability
+## 5. No warranty
 
-To the maximum extent permitted by law, the authors and contributors of SoroPad are not liable for any direct, indirect, incidental, special, consequential, or exemplary damages arising from your use of the software, including loss of tokens, loss of funds, or loss of profits.
+Nothing in this repository or the interface should be read as an approval, endorsement, or verification of any token, issuer, or launch. The fact that a token was deployed through SoroPad carries no weight as to its legality, safety, or value.
 
-## 6. No Financial or Legal Advice
+## 6. Limitation of liability
 
-Nothing in SoroPad constitutes financial, legal, tax, or investment advice. See [RISK.md](RISK.md) for the full risk disclosure.
+Nothing in this repository or the interface should be read as an approval, endorsement, or verification of any token, issuer, or launch. The fact that a token was deployed through SoroPad carries no weight as to its legality, safety, or value.
 
-## 7. Regulatory Responsibility
+## 7. License
 
-SoroPad is software. It does not issue or distribute tokens and does not provide crypto-asset services under MiCA (Regulation (EU) 2023/1114). Users who deploy tokens are solely responsible for assessing whether their activity is regulated and for complying with applicable law.
+The software is licensed under the MIT License. See [`LICENSE`](LICENSE).
 
 ## 8. Changes
 
-These terms may be updated in the repository. Continued use of SoroPad after an update constitutes acceptance of the revised terms.
+Changes to these terms are made in the public repository and are visible in the git history of this file. The "Last updated" date at the top of this document reflects the most recent revision.
 
 ## 9. Contact
 
-For questions about these terms, open an issue in the repository. For security reports, see [SECURITY.md](SECURITY.md).
+Questions about these terms can be raised as an issue in the public repository. See [`SECURITY.md`](SECURITY.md) for security-specific reporting.

@@ -1,1 +1,43 @@
-#IFNlY3VyaXR5IFBvbGljeQoKIyMgUmVwb3J0aW5nIGEgVnVsbmVyYWJpbGl0eQoKSWYgeW91IGJlbGlldmUgeW91IGhhdmUgZm91bmQgYSBzZWN1cml0eSB2dWxuZXJhYmlsaXR5IGluIFNvcm9QYWQsIHBsZWFzZSByZXBvcnQgaXQgcHJpdmF0ZWx5LiAqKkRvIG5vdCBvcGVuIGEgcHVibGljIGlzc3VlIGZvciBhIHN1c3BlY3RlZCB2dWxuZXJhYmlsaXR5LioqCgpQcmVmZXJyZWQgY2hhbm5lbDoKCi0gT3BlbiBhIGRyYWZ0IHNlY3VyaXR5IGFkdmlzb3J5IGluIHRoZSByZXBvc2l0b3J5J3MgU2VjdXJpdHkgdGFiIChHaXRIdWIgUHJpdmF0ZSBWdWxuZXJhYmlsaXR5IFJlcG9ydGluZyksIG9yCi0gQ29udGFjdCB0aGUgbWFpbnRhaW5lcnMgZGlyZWN0bHkgdGhyb3VnaCB0aGUgY29udGFjdCBtZXRob2QgbGlzdGVkIGluIHRoZSByZXBvc2l0b3J5IHByb2ZpbGUuCgpQbGVhc2UgaW5jbHVkZToKCi0gQSBkZXNjcmlwdGlvbiBvZiB0aGUgaXNzdWUgYW5kIGl0cyBpbXBhY3QuCi0gU3RlcHMgdG8gcmVwcm9kdWNlIGl0LgotIEFmZmVjdGVkIGNvbXBvbmVudHMgKGNvbnRyYWN0cy8sIGZyb250ZW5kLywgc2NyaXB0cy8pLgotIEFueSBzdWdnZXN0ZWQgbWl0aWdhdGlvbi4KCiMjIFNjb3BlCgpJbiBzY29wZToKCi0gVGhlIFNFUC00MSB0b2tlbiBjb250cmFjdCBpbiBgY29udHJhY3RzL3Rva2VuL2AuCi0gVGhlIHZlc3RpbmcgY29udHJhY3QgaW4gYGNvbnRyYWN0cy92ZXN0aW5nL2AuCi0gVGhlIE5leHQuanMgZnJvbnRlbmQgaW4gYGZyb250ZW5kL2AuCi0gRGVwbG95bWVudCBhbmQga2V5LWdlbmVyYXRpb24gc2NyaXB0cyBpbiBgc2NyaXB0cy8gLgoKT3V0IG9mIHNjb3BlOgoKLSBUaGlyZC1wYXJ0eSBzZXJ2aWNlcyAoU3RlbGxhciBIb3Jpem9uLCBTb3JvYmFuIFJQQywgRnJlaWdodGVyKS4KLSBUb2tlbnMgZGVwbG95ZWQgYnkgdXNlcnMgdGhyb3VnaCB0aGUgaW50ZXJmYWNlLgotIFNvY2lhbCBlbmdpbmVlcmluZyBvciBwaGlzaGluZyBhdHRhY2tzIHRhcmdldGluZyBpbmRpdmlkdWFsIHdhbGxldHMuCgojIyBSZXNwb25zZSBFeHBlY3RhdGlvbnMKClRoZSBtYWludGFpbmVycyBhaW0gdG8gYWNrbm93bGVkZ2UgYSByZXBvcnQgd2l0aGluIDcyIGhvdXJzIGFuZCB0byBwcm92aWRlIGFuIGluaXRpYWwgYXNzZXNzbWVudCB3aXRoaW4gNyBkYXlzLiBUaW1lbGluZXMgYXJlIGJlc3QtZWZmb3J0IGFuZCBkZXBlbmQgb24gdGhlIHNldmVyaXR5IGFuZCBjb21wbGV4aXR5IG9mIHRoZSByZXBvcnQuCgojIyBEaXNjbG9zdXJlIFBvbGljeQoKUGxlYXNlIGdpdmUgdGhlIG1haW50YWluZXJzIGEgcmVhc29uYWJsZSB3aW5kb3cgdG8gaW52ZXN0aWdhdGUgYW5kIHBhdGNoIGJlZm9yZSBwdWJsaWMgZGlzY2xvc3VyZS4gV2UgYXJlIGhhcHB5IHRvIGNyZWRpdCByZXBvcnRlcnMgaW4gdGhlIGFkdmlzb3J5IG9uY2UgYSBmaXggaXMgcmVsZWFzZWQuCgojIyBTYWZlIEhhcmJvcgoKV2hlbiB0ZXN0aW5nLCB1c2UgdGhlIFN0ZWxsYXIgdGVzdG5ldCBhbmQgeW91ciBvd24gd2FsbGV0LiBEbyBub3QgYXR0ZW1wdCB0byBleHBsb2l0IGlzc3VlcyBvbiBtYWlubmV0IG9yIGFnYWluc3Qgb3RoZXIgdXNlcnMnIGFzc2V0cy4K
+# Security Policy
+
+## Reporting a vulnerability
+
+If you believe you have found a security vulnerability in SoroPad, please report it privately. Do not open a public GitHub issue for a suspected vulnerability.
+
+- Email: security@soropad.dev
+- Please include a description of the issue, reproduction steps, affected contracts and networks, and any suggested mitigation.
+
+We aim to acknowledge reports within 48 hours and to provide an initial assessment within 7 days. We will keep you informed as the issue is investigated and resolved.
+
+## Scope
+
+This policy covers the SoroPad smart contracts, the web application in this repository, and the deployment tooling used to launch tokens.
+
+It does not cover third-party wallets, exchanges, bridges, or other external services that users may interact with through SoroPad.
+
+## Out of scope
+
+- Social engineering or phishing attacks against team members.
+- Denb‑of ‑service attacks that require overwhelming traffic against hosted infrastructure.
+- Vulnerabilities in third-party dependencies that are already publicly disclosed and have a upstream fix available.
+
+## Disclosure policy
+
+We ask that you give us a reasonable window to investigate and patch an issue before you disclose it publicly. We will coordinate with you on the timing and content of any public disclosure and will credit you for the report unless you request otherwise.
+
+## Safe harbor for researchers
+
+We will not pursue legal action against researchers who act in good faith and follow this policy, including testing on local development networks or testnets, and who do not access, modify, or destroy data that does not belong to them.
+
+## Hardening recommendations for operators
+
+If you are deploying tokens with SoroPad, keep the following in mind:
+
+- Verify the contract addresses and chain ID before signing any transaction.
+- Review the ownership and upgrade path in `docs/contract-upgrade.md` so you know who can change the contract after launch.
+- Review the compliance hook in `docs/compliance-node-interface.md` and the solvency model in `docs/vesting-solvency.md` before deploying.
+- Treat your deployer key as a high-value secret and use a hardware wallet where possible.
+
+## Supported versions
+
+We provide security fixes for the latest release of the contracts and the web application. Older releases may not receive fixes.
