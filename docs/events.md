@@ -18,6 +18,7 @@ value) and **data** carries the payload.
 | `transfer` | `transfer` | `from: Address` | `to: Address` | `amount: i128` |
 | `approve` | `approve` | `owner: Address` | `spender: Address` | `amount: i128` |
 | `transfer_from` | `transfer` | `from: Address` | `to: Address` | `amount: i128` |
+| `launch_seal` | `seal` | — | — | `(commitment: BytesN<32>, ledger: u32, supply: i128)` |
 
 > `transfer_from` re-uses the `transfer` event emitted by the internal
 > `_transfer` helper because the observable balance change is identical to a
