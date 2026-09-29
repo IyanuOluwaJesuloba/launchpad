@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useTranslations } from "next-intl";
-import { Download } from "lucide-react";
+import { AlertTriangle, Download } from "lucide-react";
 import {
   truncateAddress,
   fetchWalletTokenState,
@@ -15,6 +15,7 @@ import { useSoroban } from "@/hooks/useSoroban";
 import { TokenStatusBanner } from "@/components/TokenStatusBanner";
 import VestingProgress from "./VestingProgress";
 import TransactionHistory from "./TransactionHistory";
+import { fetchTransactionHistory } from "@/lib/indexer";
 import SupplyBreakdownChart from "@/components/charts/SupplyBreakdownChart";
 import { ExplorerLink } from "@/components/ui/ExplorerLink";
 import ActivityFeed from "./ActivityFeed";
@@ -50,6 +51,14 @@ export default function TokenDashboard({ contractId }: { contractId: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { publicKey, connected } = useWallet();
+
+  // When Mercury is unavailable the indexer falls back to a bounded RPC
+  // window (~1000 ledgers, roughly 83 minutes). Track the window's start
+  // ledger so the UI can state that the history shown is truncated rather
+  // than presenting it as the token's complete history.
+  const [historyStartLedger, setHistoryStartLedger] = useState<
+    number | undefined
+  >();
 
   // The vesting contract holding this token's grants, if the deployment
   // recorded one. `TrackedDeployment.vestingContractId` exists for exactly
@@ -114,6 +123,24 @@ export default function TokenDashboard({ contractId }: { contractId: string }) {
     }
   }, [contractId, fetchTokenInfo, fetchTopHolders, fetchSupplyBreakdown]);
 
+  // Probe the indexer once to learn whether the transaction history is
+  // served from a bounded RPC fallback window. `fetchTransactionHistory`
+  // returns the window's start ledger when it is truncated; when Mercury
+  // is available it is undefined and the history is complete.
+  useEffect(() => {
+    let cancelled = false;
+    fetchTransactionHistory(contractId)
+      .then((result) => {
+        if (!cancelled) setHistoryStartLedger(result.startLedger);
+      })
+      .catch(() => {
+        if (!cancelled) setHistoryStartLedger(undefined);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [contractId]);
+
   useEffect(() => {
     loadData();
   }, [loadData]);
@@ -166,6 +193,28 @@ export default function TokenDashboard({ contractId }: { contractId: string }) {
       </div>
 
       <TokenStatusBanner tokenInfo={tokenInfo} walletState={walletState} />
+
+      {historyStartLedger !== undefined && (
+        <div
+          role="status"
+          className="mb-8 flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200"
+        >
+          <AlertTriangle
+            className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-400"
+            aria-hidden="true"
+          />
+          <div>
+            <p className="font-medium">
+              Showing a truncated transaction history
+            </p>
+            <p className="mt-1 text-amber-200/80">
+              The indexer is unavailable, so only events from ledger{" "}
+              {historyStartLedger} onward (roughly the last 83 minutes) are
+              shown. Full history requires the indexer.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Token info grid */}
       <section aria-label={t("sections.tokenDetails")} className="mb-10">
